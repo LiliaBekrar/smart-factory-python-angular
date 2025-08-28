@@ -5,7 +5,12 @@ from sqlalchemy.orm import Session
 from .db import SessionLocal
 from .models import Machine, WorkOrder, ProductionEvent
 
-app = FastAPI(title="Smart Factory API")
+app = FastAPI(
+    title="Smart Factory API",
+    docs_url="/docs",          # Swagger UI
+    redoc_url="/redoc",        # ReDoc
+    openapi_url="/openapi.json"
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -32,7 +37,7 @@ def list_work_orders(db: Session = Depends(get_db)):
     return db.query(WorkOrder).all()
 
 from datetime import datetime, timedelta
-from sqlalchemy import func
+from sqlalchemy import func, case
 
 @app.get("/machines/{machine_id}/kpis")
 def machine_kpis(machine_id: int, db: Session = Depends(get_db)):
@@ -47,8 +52,8 @@ def machine_kpis(machine_id: int, db: Session = Depends(get_db)):
     # SUM(good) et SUM(scrap) sur la dernière heure, pour cette machine
     sums = (
         db.query(
-            func.sum(func.case((ProductionEvent.event_type == "good", ProductionEvent.qty), else_=0)).label("good_sum"),
-            func.sum(func.case((ProductionEvent.event_type == "scrap", ProductionEvent.qty), else_=0)).label("scrap_sum"),
+            func.sum(case((ProductionEvent.event_type == "good", ProductionEvent.qty), else_=0)).label("good_sum"),
+            func.sum(case((ProductionEvent.event_type == "scrap", ProductionEvent.qty), else_=0)).label("scrap_sum"),
         )
         .filter(
             ProductionEvent.machine_id == machine_id,
@@ -63,3 +68,13 @@ def machine_kpis(machine_id: int, db: Session = Depends(get_db)):
     trs = (good / (good + scrap) * 100) if (good + scrap) > 0 else 0.0
 
     return {"throughput_last_hour": throughput, "trs": round(trs, 1)}
+
+from fastapi.routing import APIRoute
+
+@app.get("/routes")
+def list_routes():
+    out = []
+    for r in app.routes:
+        if isinstance(r, APIRoute):
+            out.append({"path": r.path, "methods": list(r.methods)})
+    return out
