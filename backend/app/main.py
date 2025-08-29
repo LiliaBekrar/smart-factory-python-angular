@@ -2,16 +2,18 @@
 from typing import List
 from datetime import datetime, timedelta
 
-from fastapi import FastAPI, Query, Depends, HTTPException
+from fastapi import FastAPI, Query, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.routing import APIRoute
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 
 from sqlalchemy.orm import Session
 from sqlalchemy import func, case, desc
 
 from app.db import SessionLocal
-from app.models import Machine, WorkOrder, ProductionEvent
-from app.schemas import MachineOut, WorkOrderOut, KPIOut, ActivityItemOut
+from app.models import Machine, WorkOrder, ProductionEvent, User
+from app.schemas import MachineOut, WorkOrderOut, KPIOut, ActivityItemOut,UserOut, SignupIn, LoginIn, TokenOut, MachineCreate, MachineUpdate
+from app.security import hash_password, verify_password, create_access_token, decode_token
 
 
 # -------------------------
@@ -32,7 +34,6 @@ app.add_middleware(
     allow_credentials=True,
 )
 
-
 # -------------------------
 # DB session dependency
 # -------------------------
@@ -43,6 +44,29 @@ def get_db():
     finally:
         db.close()
 
+# -------------------------
+# Dépendances d'auth & rôles
+# -------------------------
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+
+def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+) -> User:
+    payload = decode_token(token)
+    if not payload or "sub" not in payload:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    user = db.query(User).filter(User.id == int(payload["sub"])).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+    return user
+
+def require_role(*roles: str):
+    def _dep(user: User = Depends(get_current_user)):
+        if user.role not in roles:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+        return user
+    return _dep
 
 # -------------------------
 # Health
@@ -181,8 +205,86 @@ def machine_activity(
     return items
 
 
+
 # -------------------------
-# Debug: liste des routes (à retirer plus tard si tu veux)
+# Auth: signup / login / me
+# -------------------------
+@app.post("/auth/signup", response_model=UserOut)
+def signup(body: SignupIn, db: Session = Depends(get_db)):
+    if db.query(User).filter(User.email == body.email).first():
+        raise HTTPException(status_code=400, detail="Email already exists")
+    user = User(email=body.email, hashed_password=hash_password(body.password), role="chef")
+    db.add(user); db.commit(); db.refresh(user)
+    return user
+
+@app.post("/auth/login", response_model=TokenOut)
+def login(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db),
+):
+    # Swagger met l'email dans "username" (c'est normal pour OAuth2)
+    user = db.query(User).filter(User.email == form_data.username).first()
+    if not user or not verify_password(form_data.password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Bad credentials")
+    token = create_access_token({"sub": str(user.id), "role": user.role})
+    return TokenOut(access_token=token)
+
+
+@app.get("/auth/me", response_model=UserOut)
+def me(user: User = Depends(get_current_user)):
+    return user
+
+
+# -------------------------
+# Machines: CRUD (protégé pour chef/admin)
+# -------------------------
+@app.post("/machines", response_model=MachineOut)
+def create_machine(
+    body: MachineCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role("chef", "admin")),
+):
+    if db.query(Machine).filter(Machine.code == body.code).first():
+        raise HTTPException(status_code=400, detail="Machine code already exists")
+    m = Machine(**body.model_dump())
+    db.add(m); db.commit(); db.refresh(m)
+    return m
+
+@app.patch("/machines/{machine_id}", response_model=MachineOut)
+def update_machine(
+    machine_id: int,
+    body: MachineUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role("chef", "admin")),
+):
+    m = db.query(Machine).get(machine_id)
+    if not m:
+        raise HTTPException(status_code=404, detail="Machine not found")
+    data = body.model_dump(exclude_unset=True)
+    if "code" in data:
+        exists = db.query(Machine).filter(Machine.code == data["code"], Machine.id != machine_id).first()
+        if exists:
+            raise HTTPException(status_code=400, detail="Machine code already exists")
+    for k, v in data.items():
+        setattr(m, k, v)
+    db.commit(); db.refresh(m)
+    return m
+
+@app.delete("/machines/{machine_id}")
+def delete_machine(
+    machine_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role("chef", "admin")),
+):
+    m = db.query(Machine).get(machine_id)
+    if not m:
+        raise HTTPException(status_code=404, detail="Machine not found")
+    db.delete(m); db.commit()
+    return {"ok": True}
+
+
+# -------------------------
+# Debug: liste des routes
 # -------------------------
 @app.get("/routes")
 def list_routes():

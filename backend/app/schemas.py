@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, EmailStr
 from datetime import datetime, date
 
 # --- Machine ---
@@ -37,3 +37,35 @@ class ActivityItemOut(BaseModel):
     qty: int
     notes: str | None = None
     happened_at: datetime
+
+# -------- Users / Auth --------
+class UserOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    email: EmailStr
+    role: str
+
+class SignupIn(BaseModel):
+    email: EmailStr
+    password: str
+
+class LoginIn(BaseModel):
+    email: EmailStr
+    password: str
+
+class TokenOut(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+# -------- Machines (CRUD) --------
+class MachineCreate(BaseModel):
+    name: str
+    code: str
+    status: str = "setup"
+    target_rate_per_hour: int = 0
+
+class MachineUpdate(BaseModel):
+    name: str | None = None
+    code: str | None = None
+    status: str | None = None
+    target_rate_per_hour: int | None = None
