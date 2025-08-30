@@ -30,3 +30,4 @@ passlib==1.7.4
 python-jose==3.5.0
 pydantic[email]
 python-multipart
+pydantic-settings
