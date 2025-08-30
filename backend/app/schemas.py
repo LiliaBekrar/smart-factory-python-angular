@@ -1,5 +1,6 @@
 from pydantic import BaseModel, ConfigDict, EmailStr
 from datetime import datetime, date
+from typing import List
 
 # --- Machine ---
 class MachineOut(BaseModel):
@@ -69,3 +70,21 @@ class MachineUpdate(BaseModel):
     code: str | None = None
     status: str | None = None
     target_rate_per_hour: int | None = None
+
+class DashboardKPIOut(BaseModel):
+    total_machines: int
+    running: int
+    stopped: int
+    trs_avg_last_hour: float
+
+class DashboardActivityItemOut(BaseModel):
+    id: int
+    machine_code: str | None
+    event_type: str
+    qty: int
+    happened_at: datetime
+    work_order_number: str | None = None
+
+class DashboardSummaryOut(BaseModel):
+    kpis: DashboardKPIOut
+    recent: List[DashboardActivityItemOut]
