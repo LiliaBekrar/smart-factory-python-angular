@@ -74,6 +74,8 @@ from app.schemas import (
 )
 from app.security import hash_password, verify_password, create_access_token, decode_token
 
+import subprocess
+
 
 # -------------------------
 # App & middlewares
@@ -84,6 +86,22 @@ app = FastAPI(
     redoc_url="/redoc",        # ReDoc
     openapi_url="/openapi.json",
 )
+
+# --- Appliquer les migrations Alembic automatiquement au démarrage (plan gratuit Render) ---
+@app.on_event("startup")
+def run_migrations():
+    try:
+        # Essai 1 : commande Alembic directe
+        subprocess.run(["alembic", "upgrade", "head"], check=True)
+        print("✅ Alembic migrations applied (alembic upgrade head).")
+    except Exception as e1:
+        try:
+            # Essai 2 : via module Python (si 'alembic' n'est pas dans le PATH)
+            subprocess.run(["python", "-m", "alembic", "upgrade", "head"], check=True)
+            print("✅ Alembic migrations applied via python -m.")
+        except Exception as e2:
+            print(f"⚠️ Alembic migration failed: {e1} / fallback: {e2}")
+
 
 # ⚠️ En prod, limiter allow_origins aux domaines connus (ex: https://factory.example.com)
 app.add_middleware(
