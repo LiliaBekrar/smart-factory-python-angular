@@ -2,34 +2,22 @@
 Schemas Pydantic (FastAPI)
 ==========================
 
-Objectif
---------
-Définir les **modèles d'échange API** (entrées/sorties). Ces schémas assurent :
-- Validation / sérialisation des payloads.
-- Séparation claire entre **ORM models** (SQLAlchemy) et **DTO/API**.
-- Documentation automatique Swagger (types, champs, valeurs par défaut).
+Ce fichier définit les *schémas Pydantic* utilisés dans l’API.
+Ces schémas servent à :
+- Valider les données envoyées/reçues par l’API.
+- Assurer la conversion entre les objets ORM (SQLAlchemy) et les objets de sortie API.
+- Générer automatiquement la documentation Swagger (types, descriptions, champs).
 
-Conventions
------------
-- ``model_config = ConfigDict(from_attributes=True)`` permet d'instancier depuis
-  un ORM object (ex: ``UserOut.from_orm(user)``).
-- Suffixes :
-  - ``Out`` → payloads de sortie (API → client).
-  - ``In`` → payloads d'entrée (client → API).
-  - ``Create``/``Update`` → entrées CRUD.
-- Champs optionnels typés avec ``| None`` (nullable ou non fourni).
-
-Organisation
-------------
-- **Machines** : sorties et CRUD.
-- **WorkOrders** : sortie.
-- **KPI** : valeurs calculées (non liées directement à une table).
-- **Activity** : flux d'événements enrichis.
-- **Users/Auth** : login/signup/token.
-- **Dashboard** : agrégats pour affichage global (KPIs + activité récente).
+Convention de nommage :
+- `Out`    → payload de sortie (API → client).
+- `In`     → payload d’entrée (client → API).
+- `Create` → entrée pour créer un objet.
+- `Update` → entrée pour mettre à jour un objet.
 """
 
+# Import de la base Pydantic (librairie de validation et typage).
 from pydantic import BaseModel, ConfigDict, EmailStr
+# Import de types standards Python.
 from datetime import datetime, date
 from typing import List
 
@@ -38,97 +26,104 @@ from typing import List
 # Machine
 # -------------------------
 class MachineOut(BaseModel):
-    """Sortie machine (lecture API)."""
+    """Données envoyées au client lorsqu’on lit une machine via l’API."""
+    # Autorise la création du schéma directement à partir d’un objet SQLAlchemy (ORM).
     model_config = ConfigDict(from_attributes=True)
-    id: int
-    name: str
-    code: str
-    status: str
-    target_rate_per_hour: int
+
+    # Champs qui seront retournés
+    id: int                        # identifiant unique machine
+    name: str                      # nom lisible de la machine
+    code: str                      # code unique machine
+    status: str                    # état actuel (ex: running, stopped)
+    target_rate_per_hour: int      # cadence cible par heure
 
 
 # -------------------------
 # WorkOrder
 # -------------------------
 class WorkOrderOut(BaseModel):
-    """Sortie ordre de fabrication (OF)."""
+    """Données envoyées lorsqu’on lit un Ordre de Fabrication (OF)."""
     model_config = ConfigDict(from_attributes=True)
-    id: int
-    number: str
-    client: str | None = None
-    part_ref: str | None = None
-    target_qty: int
-    due_on: date | None = None
+
+    id: int                        # identifiant unique
+    number: str                    # numéro d’OF
+    client: str | None = None      # nom du client (optionnel)
+    part_ref: str | None = None    # référence de la pièce (optionnel)
+    target_qty: int                # quantité à produire
+    due_on: date | None = None     # date d’échéance prévue (optionnelle)
 
 
 # -------------------------
 # KPI (sorties calculées)
 # -------------------------
 class KPIOut(BaseModel):
-    """KPI machine sur dernière période (ex: dernière heure)."""
-    throughput_last_hour: int  # nb pièces good
-    trs: float                 # taux de qualité good/(good+scrap)
+    """Indicateurs calculés (non liés à une table SQL)."""
+    throughput_last_hour: int      # nombre de pièces bonnes produites sur la dernière heure
+    trs: float                     # Taux de Rendement Synthétique (qualité, dispo, perf)
 
 
 # -------------------------
 # Activity (flux d’événements)
 # -------------------------
 class ActivityItemOut(BaseModel):
-    """Événement de production enrichi (machine + OF)."""
+    """Événement de production enrichi (machine + OF lié)."""
     model_config = ConfigDict(from_attributes=True)
+
     id: int
     machine_id: int
     machine_code: str | None = None
     work_order_id: int | None = None
     work_order_number: str | None = None
-    event_type: str  # "good" | "scrap" | "stop" (cf. modèle ProductionEvent)
-    qty: int
-    notes: str | None = None
-    happened_at: datetime
+    event_type: str                # "good" | "scrap" | "stop"
+    qty: int                       # quantité associée à l’événement
+    notes: str | None = None       # remarque éventuelle (ex: panne)
+    happened_at: datetime          # date/heure de l’événement
 
 
 # -------------------------
 # Users / Auth
 # -------------------------
 class UserOut(BaseModel):
-    """Sortie profil utilisateur (id + email + rôle)."""
+    """Données d’un utilisateur retournées par l’API (profil)."""
     model_config = ConfigDict(from_attributes=True)
+
     id: int
-    email: EmailStr
-    role: str
+    email: EmailStr                # email valide
+    role: str                      # rôle (admin, opérateur, etc.)
 
 
 class SignupIn(BaseModel):
-    """Entrée inscription (POST /auth/signup)."""
+    """Payload d’entrée pour inscription (POST /auth/signup)."""
     email: EmailStr
     password: str
 
 
 class LoginIn(BaseModel):
-    """Entrée login (POST /auth/login)."""
+    """Payload d’entrée pour login (POST /auth/login)."""
     email: EmailStr
     password: str
 
 
 class TokenOut(BaseModel):
-    """Sortie login : JWT access token."""
-    access_token: str
-    token_type: str = "bearer"
+    """Payload de sortie après login (JWT)."""
+    access_token: str              # jeton JWT
+    token_type: str = "bearer"     # type de token (par défaut "bearer")
 
 
 # -------------------------
 # Machines (CRUD)
 # -------------------------
 class MachineCreate(BaseModel):
-    """Entrée création machine."""
+    """Payload d’entrée pour créer une machine."""
     name: str
     code: str
-    status: str = "setup"  # valeur par défaut : machine non encore démarrée
-    target_rate_per_hour: int = 0
+    status: str = "setup"          # valeur par défaut = machine non démarrée
+    target_rate_per_hour: int = 0  # valeur par défaut = 0
 
 
 class MachineUpdate(BaseModel):
-    """Entrée update machine (patch partiel)."""
+    """Payload d’entrée pour mettre à jour une machine (PATCH partiel)."""
+    # Tous les champs sont optionnels pour permettre un update partiel
     name: str | None = None
     code: str | None = None
     status: str | None = None
@@ -139,15 +134,15 @@ class MachineUpdate(BaseModel):
 # Dashboard (agrégats)
 # -------------------------
 class DashboardKPIOut(BaseModel):
-    """KPIs agrégés pour dashboard global."""
-    total_machines: int
-    running: int
-    stopped: int
-    trs_avg_last_hour: float  # moyenne TRS sur dernière heure
+    """KPIs globaux du dashboard (toutes machines)."""
+    total_machines: int            # nombre total de machines
+    running: int                   # machines en marche
+    stopped: int                   # machines arrêtées
+    trs_avg_last_hour: float       # TRS moyen sur la dernière heure
 
 
 class DashboardActivityItemOut(BaseModel):
-    """Événement simplifié pour dashboard (flux récent)."""
+    """Événement simplifié affiché dans le dashboard (flux récent)."""
     id: int
     machine_code: str | None
     event_type: str
@@ -157,6 +152,32 @@ class DashboardActivityItemOut(BaseModel):
 
 
 class DashboardSummaryOut(BaseModel):
-    """Résumé dashboard = KPIs globaux + activité récente."""
+    """Résumé du dashboard (KPIs + activité récente)."""
     kpis: DashboardKPIOut
     recent: List[DashboardActivityItemOut]
+
+
+# -------------------------
+# Production Events (saisie opérateur)
+# -------------------------
+class EventCreate(BaseModel):
+    """Payload d’entrée pour créer un événement de production."""
+    machine_id: int
+    work_order_id: int | None = None
+    event_type: str                # "good" | "scrap" | "stop"
+    qty: int = 0                   # par défaut = 0
+    happened_at: datetime | None = None
+    notes: str | None = None
+
+
+class EventOut(BaseModel):
+    """Payload de sortie pour un événement enregistré en base."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    machine_id: int
+    work_order_id: int | None
+    event_type: str
+    qty: int
+    notes: str | None
+    happened_at: datetime

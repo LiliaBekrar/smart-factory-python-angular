@@ -5,56 +5,54 @@ Smart Factory API — FastAPI
 Objectif
 --------
 API de suivi de production (machines, OF, événements) avec authentification JWT.
-Ce fichier **main.py** instancie l'application FastAPI, déclare les middlewares,
-les dépendances (DB, auth), puis expose les endpoints (santé, lecture, KPI,
-flux d'activité, auth, CRUD machines).
+Ce fichier instancie l'app FastAPI, déclare middlewares/dépendances et expose
+les routes (santé, lecture, KPI, flux d'activité, auth, CRUD machines, dashboard).
 
 Pour la reprise
 ---------------
-- **Stack :** FastAPI, SQLAlchemy ORM, OAuth2 (Password flow) + JWT.
-- **Entrée :** ce module (``uvicorn app.main:app --reload``).
-- **DB session :** via ``get_db()`` (yield + close).
-- **Auth :** ``OAuth2PasswordBearer``; extraction user via ``get_current_user``.
-- **Rôles :** décorateur ``require_role("chef", "admin", ...)`` pour protéger
-  des routes.
-- **Modèles :** ORM (``app.models``) et schémas Pydantic (``app.schemas``).
+- Stack : FastAPI, SQLAlchemy ORM, OAuth2 (Password flow) + JWT.
+- Entrée : `uvicorn app.main:app --reload`.
+- DB session : via `get_db()` (yield + close).
+- Auth : `OAuth2PasswordBearer`; utilisateur courant via `get_current_user`.
+- Rôles : décorateur `require_role("chef", "admin", ...)`.
+- Modèles : ORM (`app.models`) + schémas Pydantic (`app.schemas`).
 
 Conventions
 -----------
-- **UTC partout** pour les timestamps (``datetime.utcnow()``). Si besoin de TZ,
-  convertir côté client ou remplacer par des objets aware (``timezone.utc``).
-- **Calculs SQL-first** (ex: KPI) pour limiter le trafic et profiter d'index DB.
-- **Docstrings** sur chaque route : *quoi*, *comment*, *hypothèses*.
-- **Erreurs** normalisées FastAPI (``HTTPException``) + codes clairs.
+- UTC partout pour les timestamps (`datetime.utcnow()`).
+- Calculs SQL-first (ex: KPI) pour limiter trafic réseau et exploiter les index.
+- Docstrings sur chaque route (quoi/comment/hypothèses).
+- Erreurs normalisées FastAPI (`HTTPException`) + codes clairs.
 
 Démarrage rapide
 ----------------
-1) Créer l'env : ``python -m venv .venv && source .venv/bin/activate``
-2) Dépendances : ``pip install -r requirements.txt``
-3) Variables : copier ``.env.example`` en ``.env`` (SECRET_KEY, DB_URL, ...)
-4) Lancer : ``uvicorn app.main:app --reload`` puis ouvrir ``/docs``.
+1) `python -m venv .venv && source .venv/bin/activate`
+2) `pip install -r requirements.txt`
+3) Copier `.env.example` en `.env` (SECRET_KEY, DB_URL, ...)
+4) `uvicorn app.main:app --reload` puis ouvrir `/docs`.
 
-Notes pour l'industrialisation
-------------------------------
-- **SQLAlchemy 2.x :** ``Session.get(Model, id)`` est préféré à ``query.get()``.
-  Ici on laisse ``query.get()`` pour compat mais voir les TODO plus bas.
-- **Sécurité :** CORS est ouvert sur ``*`` pour faciliter le dev. Restreindre
-  ``allow_origins`` en prod.
-- **Logs / Observabilité :** envisager un middleware de logging (correlation-id)
-  et une route ``/metrics`` (Prometheus) si nécessaire.
+Notes d'industrialisation
+-------------------------
+- SQLAlchemy 2.x : `Session.get(Model, id)` préféré à `query.get()`.
+- Sécurité : CORS ouvert sur `*` en dev → restreindre en prod.
+- Observabilité : ajouter middleware de logging / route `/metrics` si besoin.
 """
 
-from typing import List
-from datetime import datetime, timedelta
+# --- Imports standards ---
+from typing import List                 # types génériques (List[...] pour les réponses)
+from datetime import datetime, timedelta # horodatage UTC + fenêtres de temps
 
-from fastapi import FastAPI, Query, Depends, HTTPException, status
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.routing import APIRoute
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+# --- Imports FastAPI ---
+from fastapi import FastAPI, Query, Depends, HTTPException, status   # app, paramètres, DI, erreurs
+from fastapi.middleware.cors import CORSMiddleware                   # CORS pour front séparé (dev)
+from fastapi.routing import APIRoute                                 # introspection des routes
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm  # OAuth2 (password flow)
 
-from sqlalchemy.orm import Session
-from sqlalchemy import func, case, desc
+# --- Imports SQLAlchemy ---
+from sqlalchemy.orm import Session                 # type de session
+from sqlalchemy import func, case, desc            # agrégations & helpers SQL
 
+# --- Accès DB / modèles / schémas / sécurité (modules maison) ---
 from app.db import SessionLocal
 from app.models import Machine, WorkOrder, ProductionEvent, User
 from app.schemas import (
@@ -74,196 +72,194 @@ from app.schemas import (
 )
 from app.security import hash_password, verify_password, create_access_token, decode_token
 
+# --- Utilitaire pour lancer Alembic au démarrage (utile sur Render gratuit) ---
 import subprocess
 
 
 # -------------------------
 # App & middlewares
 # -------------------------
+# Instancie l'application FastAPI (point d'entrée uvicorn: app.main:app)
 app = FastAPI(
-    title="Smart Factory API",
-    docs_url="/docs",          # Swagger UI
-    redoc_url="/redoc",        # ReDoc
-    openapi_url="/openapi.json",
+    title="Smart Factory API",   # titre affiché dans Swagger
+    docs_url="/docs",           # UI Swagger (documentation interactive)
+    redoc_url="/redoc",         # UI ReDoc (documentation alternative)
+    openapi_url="/openapi.json" # schéma OpenAPI brut (JSON)
 )
 
-# --- Appliquer les migrations Alembic automatiquement au démarrage (plan gratuit Render) ---
+# Applique automatiquement les migrations Alembic au démarrage de l'app.
+# Utile sur certains PaaS gratuits (ex: Render) où il n'y a pas de phase de build dédiée.
 @app.on_event("startup")
 def run_migrations():
+    """Tente d'exécuter `alembic upgrade head` au boot de l'API.
+    - Essai 1: via la CLI `alembic` (si accessible dans le PATH)
+    - Essai 2: via `python -m alembic` (fallback)
+    - En cas d'échec: log de l'erreur mais on ne bloque pas le démarrage.
+    """
     try:
-        # Essai 1 : commande Alembic directe
         subprocess.run(["alembic", "upgrade", "head"], check=True)
         print("✅ Alembic migrations applied (alembic upgrade head).")
     except Exception as e1:
         try:
-            # Essai 2 : via module Python (si 'alembic' n'est pas dans le PATH)
             subprocess.run(["python", "-m", "alembic", "upgrade", "head"], check=True)
             print("✅ Alembic migrations applied via python -m.")
         except Exception as e2:
             print(f"⚠️ Alembic migration failed: {e1} / fallback: {e2}")
 
-
-# ⚠️ En prod, limiter allow_origins aux domaines connus (ex: https://factory.example.com)
+# Middleware CORS: autorise les requêtes depuis d'autres origines (ex: frontend local)
+# ⚠️ En production, remplacer ["*"] par la/les URL(s) front autorisées
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-    allow_credentials=True,
+    allow_origins=["*"],   # autorise toutes les origines en dev
+    allow_methods=["*"],   # autorise toutes les méthodes HTTP
+    allow_headers=["*"],   # autorise tous les headers (dont Authorization)
+    allow_credentials=True  # permet d'envoyer cookies/credentials
 )
 
 
 # -------------------------
-# DB session dependency
+# Dépendance DB (une session par requête)
 # -------------------------
 
 def get_db():
-    """Fournit une session SQLAlchemy par requête.
+    """Crée une session SQLAlchemy et garantit sa fermeture.
 
-    Usage :
+    Utilisation typique dans une route:
         def route(db: Session = Depends(get_db)):
             ...
-
-    Garantit la fermeture de la session (``finally: db.close()``).
     """
-    db = SessionLocal()
+    db = SessionLocal()  # ouvre une nouvelle session DB
     try:
-        yield db
+        yield db         # injecte la session dans la route appelante
     finally:
-        db.close()
+        db.close()       # ferme proprement quoi qu'il arrive (évite fuite de connexions)
 
 
 # -------------------------
-# Dépendances d'auth & rôles
+# Authentification & Rôles
 # -------------------------
-
-# OAuth2 Password flow (voir /auth/login). Swagger place l'email dans "username".
+# Schéma OAuth2 (password flow) pour récupérer le token Bearer depuis le header Authorization
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 
-def get_current_user(
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db),
-) -> User:
-    """Résout l'utilisateur courant depuis le JWT Bearer.
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
+    """Résout l'utilisateur courant à partir du JWT Bearer.
 
-    - Décode le token via ``decode_token`` (signature + expiration).
-    - Récupère l'utilisateur en DB par ``sub`` (id).
-    - Lève 401 si token invalide / utilisateur introuvable.
+    Étapes:
+    - Décoder le token (signature/expiration) via `decode_token`.
+    - Lire `sub` (id utilisateur) dans le payload.
+    - Charger l'utilisateur correspondant en base.
+    - Lever 401 si token invalide ou utilisateur introuvable.
     """
-    payload = decode_token(token)
+    payload = decode_token(token)  # décode le JWT (retourne un dict ou None)
     if not payload or "sub" not in payload:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
-    user = db.query(User).filter(User.id == int(payload["sub"])).first()
-    if not user:
+
+    user = db.query(User).filter(User.id == int(payload["sub"])).first()  # récupère l'utilisateur par id
+    if not user:  # si aucun utilisateur ne correspond
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
-    return user
+
+    return user  # renvoie l'entité User (sera sérialisée via Pydantic si utilisée comme response_model)
 
 
 def require_role(*roles: str):
     """Fabrique une dépendance qui restreint l'accès aux rôles fournis.
 
-    Exemple :
+    Exemple d'usage dans une route protégée:
         user: User = Depends(require_role("chef", "admin"))
     """
-
     def _dep(user: User = Depends(get_current_user)):
+        # Vérifie que le rôle de l'utilisateur courant fait partie des rôles autorisés
         if user.role not in roles:
+            # 403 = utilisateur authentifié mais non autorisé (droits insuffisants)
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
-        return user
+        return user  # renvoie l'utilisateur pour que la route puisse l'exploiter si besoin
 
-    return _dep
+    return _dep  # renvoie la fonction de dépendance à FastAPI
 
 
 # -------------------------
-# Health
+# Healthcheck (liveness)
 # -------------------------
-
 @app.get("/health")
 def health():
-    """Vérifie la disponibilité de l'API (liveness)."""
+    """Renvoie un petit JSON pour indiquer que l'API est vivante."""
     return {"status": "ok"}
 
 
 # -------------------------
-# Machines & WorkOrders (lecture)
+# Lecture Machines & WorkOrders
 # -------------------------
-
 @app.get("/machines", response_model=List[MachineOut])
 def list_machines(db: Session = Depends(get_db)):
-    """Retourne la liste des machines (lecture simple, sans pagination)."""
-    return db.query(Machine).all()
+    """Retourne la liste des machines (sans pagination pour simplifier)."""
+    return db.query(Machine).all()  # SELECT * FROM machines
 
 
 @app.get("/work_orders", response_model=List[WorkOrderOut])
 def list_work_orders(db: Session = Depends(get_db)):
     """Retourne la liste des ordres de fabrication (OF)."""
-    return db.query(WorkOrder).all()
+    return db.query(WorkOrder).all()  # SELECT * FROM work_orders
 
 
 # -------------------------
 # KPIs (dernière heure)
 # -------------------------
-
 @app.get("/machines/{machine_id}/kpis", response_model=KPIOut)
 def machine_kpis(machine_id: int, db: Session = Depends(get_db)):
-    """KPIs sur la **dernière heure** pour une machine donnée.
+    """Calcule les KPIs d'une machine sur la **dernière heure**.
 
-    Définitions :
-      - ``throughput_last_hour`` : somme des pièces 'good' (``qty``) sur 60 min.
-      - ``trs`` : % qualité = ``good / (good + scrap) * 100``.
+    Définitions:
+    - `throughput_last_hour` = somme des pièces "good" (qty) sur 60 minutes.
+    - `trs` = % qualité = good / (good + scrap) * 100.
 
-    Implémentation :
-      - Calcul côté SQL via ``CASE WHEN`` + ``SUM`` pour efficacité.
-      - Les événements considérés sont ceux avec ``happened_at >= now - 1h``.
-
-    Remarques :
-      - Si ``good + scrap == 0``, ``trs`` vaut 0.0 pour éviter division par 0.
-      - Les timestamps sont en UTC (``datetime.utcnow()``).
+    Implémentation:
+    - Calcul côté SQL via `SUM(CASE WHEN ...)` pour meilleures perfs.
+    - Fenêtre = événements avec `happened_at >= now - 1h` (UTC).
     """
-    one_hour_ago = datetime.utcnow() - timedelta(hours=1)
+    one_hour_ago = datetime.utcnow() - timedelta(hours=1)  # borne basse de la fenêtre de calcul
 
+    # Construction de la requête d'agrégation
     sums = (
         db.query(
-            func.sum(
-                case((ProductionEvent.event_type == "good", ProductionEvent.qty), else_=0)
-            ).label("good_sum"),
-            func.sum(
-                case((ProductionEvent.event_type == "scrap", ProductionEvent.qty), else_=0)
-            ).label("scrap_sum"),
+            # Somme des qty quand event_type == 'good'
+            func.sum(case((ProductionEvent.event_type == "good", ProductionEvent.qty), else_=0)).label("good_sum"),
+            # Somme des qty quand event_type == 'scrap'
+            func.sum(case((ProductionEvent.event_type == "scrap", ProductionEvent.qty), else_=0)).label("scrap_sum"),
         )
         .filter(
-            ProductionEvent.machine_id == machine_id,
-            ProductionEvent.happened_at >= one_hour_ago,
+            ProductionEvent.machine_id == machine_id,           # on cible la machine demandée
+            ProductionEvent.happened_at >= one_hour_ago,        # on limite à la dernière heure
         )
-        .one()
+        .one()  # on attend une seule ligne de résultat
     )
 
-    good = sums.good_sum or 0
-    scrap = sums.scrap_sum or 0
-    trs = (good / (good + scrap) * 100) if (good + scrap) > 0 else 0.0
+    good = sums.good_sum or 0   # si None → 0
+    scrap = sums.scrap_sum or 0 # si None → 0
+    trs = (good / (good + scrap) * 100) if (good + scrap) > 0 else 0.0  # évite division par zéro
 
+    # On renvoie un objet Pydantic KPIOut (sera auto‑sérialisé en JSON)
     return KPIOut(throughput_last_hour=int(good), trs=round(trs, 1))
 
 
 # -------------------------
-# Activity feed
+# Activity feed (toutes machines)
 # -------------------------
-
 @app.get("/activities/recent", response_model=List[ActivityItemOut])
 def recent_activities(
-    limit: int = Query(50, ge=1, le=500),
-    minutes: int = Query(120, ge=1, le=24 * 60),
+    limit: int = Query(50, ge=1, le=500),        # nombre max d'items à renvoyer (borne 1..500)
+    minutes: int = Query(120, ge=1, le=24*60),   # fenêtre temporelle (en minutes)
     db: Session = Depends(get_db),
 ):
-    """Flux d'activité **toutes machines** sur *N* dernières minutes.
+    """Retourne les derniers événements (toutes machines) sur N minutes.
 
-    - ``limit`` borne le nombre d'items renvoyés (défaut 50, max 500).
-    - Joint ``Machine`` (pour ``code``) et ``WorkOrder`` (optionnel) pour enrichir.
-    - Tri décroissant sur ``happened_at``.
+    - Joint `Machine` pour récupérer `code` (affichage plus parlant côté front).
+    - `WorkOrder` est une jointure externe (outerjoin) car un event peut ne pas avoir d'OF.
+    - Tri décroissant sur `happened_at`.
     """
-    since = datetime.utcnow() - timedelta(minutes=minutes)
+    since = datetime.utcnow() - timedelta(minutes=minutes)  # borne basse de la fenêtre
 
+    # Requête avec jointures pour enrichir chaque event
     q = (
         db.query(ProductionEvent, Machine.code, WorkOrder.number)
         .join(Machine, Machine.id == ProductionEvent.machine_id)
@@ -273,24 +269,27 @@ def recent_activities(
         .limit(limit)
     )
 
-    items: List[ActivityItemOut] = []
-    for ev, machine_code, wo_number in q.all():
+    items: List[ActivityItemOut] = []  # liste finale à renvoyer
+    for ev, machine_code, wo_number in q.all():  # itère sur les lignes retournées
         items.append(
             ActivityItemOut(
                 id=ev.id,
                 machine_id=ev.machine_id,
-                machine_code=machine_code,
-                work_order_id=ev.work_order_id,
-                work_order_number=wo_number,
-                event_type=ev.event_type,
+                machine_code=machine_code,            # code de la machine (ex: CNC‑01)
+                work_order_id=ev.work_order_id,       # peut être None
+                work_order_number=wo_number,          # peut être None
+                event_type=ev.event_type,             # "good" | "scrap" | "stop"
                 qty=ev.qty,
                 notes=ev.notes,
                 happened_at=ev.happened_at,
             )
         )
-    return items
+    return items  # FastAPI sérialise la liste d'objets Pydantic en JSON
 
 
+# -------------------------
+# Activity feed (une machine)
+# -------------------------
 @app.get("/machines/{machine_id}/activity", response_model=List[ActivityItemOut])
 def machine_activity(
     machine_id: int,
@@ -298,9 +297,10 @@ def machine_activity(
     minutes: int = Query(120, ge=1, le=24 * 60),
     db: Session = Depends(get_db),
 ):
-    """Historique d'une **machine** sur *N* dernières minutes (trié récent→ancien)."""
+    """Retourne l'historique d'une machine sur N minutes (du plus récent au plus ancien)."""
     since = datetime.utcnow() - timedelta(minutes=minutes)
 
+    # Requête: pour chaque event de la machine, on récupère éventuellement le n° d'OF
     q = (
         db.query(ProductionEvent, WorkOrder.number)
         .outerjoin(WorkOrder, WorkOrder.id == ProductionEvent.work_order_id)
@@ -312,7 +312,8 @@ def machine_activity(
         .limit(limit)
     )
 
-    # TODO(SQLAlchemy 2.x) : préférer ``db.get(Machine, machine_id)`` si disponible.
+    # Récupère le code machine pour enrichir la sortie (non strictement nécessaire, mais pratique)
+    # NOTE (SQLAlchemy 2.x): `db.get(Machine, machine_id)` est l'API moderne.
     m = db.query(Machine).get(machine_id)
     machine_code = m.code if m else None
 
@@ -322,9 +323,9 @@ def machine_activity(
             ActivityItemOut(
                 id=ev.id,
                 machine_id=ev.machine_id,
-                machine_code=machine_code,
+                machine_code=machine_code,       # on réutilise le code si trouvé
                 work_order_id=ev.work_order_id,
-                work_order_number=wo_number,
+                work_order_number=wo_number,     # peut être None
                 event_type=ev.event_type,
                 qty=ev.qty,
                 notes=ev.notes,
@@ -337,70 +338,96 @@ def machine_activity(
 # -------------------------
 # Auth: signup / login / me
 # -------------------------
-
 @app.post("/auth/signup", response_model=UserOut)
 def signup(body: SignupIn, db: Session = Depends(get_db)):
-    """Inscription simple (email + mot de passe).
-
-    - Refuse si l'email existe déjà (HTTP 400).
-    - Rôle par défaut : ``chef`` (adapter selon besoins).
-    - Stocke le mot de passe **haché** (``hash_password``).
     """
+    Endpoint d'inscription (création d'un utilisateur).
+    - Reçoit un email et un mot de passe (dans le body JSON).
+    - Vérifie que l'email n'est pas déjà utilisé.
+    - Crée un utilisateur avec rôle par défaut = "operator".
+    - Stocke le mot de passe de manière sécurisée (haché).
+    - Retourne l'utilisateur créé (sans le mot de passe).
+    """
+
+    # Vérifier si l'email existe déjà en base (unicité métier)
     if db.query(User).filter(User.email == body.email).first():
+        # Si oui → renvoyer une erreur 400 (Bad Request)
         raise HTTPException(status_code=400, detail="Email already exists")
-    user = User(email=body.email, hashed_password=hash_password(body.password), role="chef")
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    return user
+
+    # Créer un nouvel utilisateur (NE JAMAIS stocker le mdp en clair)
+    user = User(
+        email=body.email,
+        hashed_password=hash_password(body.password),  # on hache le mot de passe, jamais en clair
+        role="operator"  # rôle par défaut : opérateur (pas chef/admin)
+    )
+
+    # Sauvegarder en base
+    db.add(user)      # ajoute l'objet à la session
+    db.commit()       # pousse l'INSERT en DB
+    db.refresh(user)  # recharge depuis la DB (récupère id, timestamps, etc.)
+
+    return user  # FastAPI utilisera UserOut pour masquer champs sensibles
 
 
 @app.post("/auth/login", response_model=TokenOut)
-def login(
-    form_data: OAuth2PasswordRequestForm = Depends(),
-    db: Session = Depends(get_db),
-):
-    """Login OAuth2 Password flow.
-
-    Swagger place l'**email** dans ``username`` (comportement attendu d'OAuth2PasswordRequestForm).
-    Si les identifiants sont valides, renvoie un JWT ``access_token`` portant
-    ``sub`` (id user) et ``role``.
+def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     """
+    Endpoint de login (OAuth2 password flow).
+    - Swagger met l'email dans `username` (convention OAuth2PasswordRequestForm).
+    - Vérifie les identifiants (email + mot de passe).
+    - Si OK → génère un JWT portant `sub` (id utilisateur) et `role`.
+    - Retourne `access_token` (type `bearer`).
+    """
+
+    # 1) Récupérer l'utilisateur par email (username côté formulaire OAuth2)
     user = db.query(User).filter(User.email == form_data.username).first()
+
+    # 2) Vérifier l'existence et le mot de passe (haché)
     if not user or not verify_password(form_data.password, user.hashed_password):
+        # 401: non authentifié (identifiants incorrects)
         raise HTTPException(status_code=401, detail="Bad credentials")
+
+    # 3) Créer un token JWT (payload minimal: sub=id, role=rôle)
     token = create_access_token({"sub": str(user.id), "role": user.role})
+
+    # 4) Retourner le token (Pydantic TokenOut sérialise en JSON)
     return TokenOut(access_token=token)
 
 
 @app.get("/auth/me", response_model=UserOut)
 def me(user: User = Depends(get_current_user)):
-    """Retourne le profil de l'utilisateur authentifié."""
+    """Retourne le profil de l'utilisateur authentifié (décodé depuis le JWT)."""
     return user
 
 
 # -------------------------
 # Machines: CRUD (protégé pour chef/admin)
 # -------------------------
-
 @app.post("/machines", response_model=MachineOut)
 def create_machine(
     body: MachineCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role("chef", "admin")),
+    user: User = Depends(require_role("chef", "admin")),  # accès restreint par rôles
 ):
-    """Crée une machine (rôles requis : ``chef`` ou ``admin``).
+    """Crée une machine.
 
-    - Unicité du ``code`` machine garantie (HTTP 400 sinon).
-    - Retourne l'entité créée.
+    - Vérifie l'unicité du `code` (400 si déjà pris).
+    - Sauvegarde et retourne l'entité créée.
     """
+
+    # Unicité du code machine
     if db.query(Machine).filter(Machine.code == body.code).first():
         raise HTTPException(status_code=400, detail="Machine code already exists")
+
+    # Création à partir du schéma Pydantic (décompacte en kwargs)
     m = Machine(**body.model_dump())
+
+    # Persistance
     db.add(m)
     db.commit()
     db.refresh(m)
-    return m
+
+    return m  # sera sérialisé via MachineOut
 
 
 @app.patch("/machines/{machine_id}", response_model=MachineOut)
@@ -408,28 +435,37 @@ def update_machine(
     machine_id: int,
     body: MachineUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role("chef", "admin")),
+    user: User = Depends(require_role("chef", "admin")),  # accès restreint
 ):
-    """Met à jour les champs d'une machine (patch partiel).
+    """Met à jour une machine (PATCH partiel).
 
-    - Vérifie l'existence (404) puis l'unicité de ``code`` si modifié (400).
-    - Applique uniquement les champs fournis (``exclude_unset=True``).
+    - 404 si la machine n'existe pas.
+    - Vérifie l'unicité du `code` si modifié.
+    - Applique uniquement les champs fournis (`exclude_unset=True`).
     """
-    # TODO(SQLAlchemy 2.x) : ``m = db.get(Machine, machine_id)`` si API 2.0.
+
+    # Récupération de la machine (NOTE: en SQLAlchemy 2.x, préférer db.get(Model, id))
     m = db.query(Machine).get(machine_id)
     if not m:
         raise HTTPException(status_code=404, detail="Machine not found")
 
+    # On ne met à jour que les champs présents dans la requête
     data = body.model_dump(exclude_unset=True)
+
+    # Si `code` est dans les updates, vérifier qu'il n'est pas utilisé par une autre machine
     if "code" in data:
         exists = db.query(Machine).filter(Machine.code == data["code"], Machine.id != machine_id).first()
         if exists:
             raise HTTPException(status_code=400, detail="Machine code already exists")
 
+    # Appliquer les modifications sur l'objet ORM
     for k, v in data.items():
         setattr(m, k, v)
+
+    # Sauvegarder
     db.commit()
     db.refresh(m)
+
     return m
 
 
@@ -437,45 +473,51 @@ def update_machine(
 def delete_machine(
     machine_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role("chef", "admin")),
+    user: User = Depends(require_role("chef", "admin")),  # accès restreint
 ):
-    """Supprime une machine (retour ``{"ok": true}``)."""
-    # TODO(SQLAlchemy 2.x) : ``m = db.get(Machine, machine_id)`` si possible.
+    """Supprime une machine. Retourne `{ "ok": True }` si succès."""
+
+    # Cherche la machine à supprimer
     m = db.query(Machine).get(machine_id)
     if not m:
         raise HTTPException(status_code=404, detail="Machine not found")
+
+    # Supprime puis commit
     db.delete(m)
     db.commit()
+
     return {"ok": True}
 
+
+# -------------------------
+# Dashboard (agrégats + flux récent)
+# -------------------------
 @app.get("/dashboard/summary", response_model=DashboardSummaryOut)
 def dashboard_summary(
-    limit_recent: int = Query(5, ge=1, le=50),
-    minutes: int = Query(60, ge=5, le=24*60),
+    limit_recent: int = Query(5, ge=1, le=50),   # nombre d'événements récents à renvoyer
+    minutes: int = Query(60, ge=5, le=24*60),    # fenêtre pour TRS/activités
     db: Session = Depends(get_db),
 ):
-    """
-    Résumé global pour le Dashboard :
-      - total machines / running / stopped
-      - TRS moyen (dernière heure)
-      - N dernières activités
-    """
-    since = datetime.utcnow() - timedelta(minutes=minutes)
+    """Résumé global pour un dashboard simple.
 
-    # 1) Compteurs machines
+    Contient:
+    - total machines / running / stopped
+    - TRS moyen dernière heure (approx: good/(good+scrap)*100)
+    - N dernières activités (enrichies)
+    """
+
+    since = datetime.utcnow() - timedelta(minutes=minutes)  # borne basse
+
+    # 1) Compteurs machines (simples agrégations)
     total = db.query(func.count(Machine.id)).scalar() or 0
     running = db.query(func.count(Machine.id)).filter(Machine.status == "running").scalar() or 0
     stopped = db.query(func.count(Machine.id)).filter(Machine.status == "stopped").scalar() or 0
 
-    # 2) TRS moyen dernière heure (good / (good+scrap) * 100)
+    # 2) TRS moyen (global sur la fenêtre)
     sums = (
         db.query(
-            func.sum(
-                case((ProductionEvent.event_type == "good", ProductionEvent.qty), else_=0)
-            ).label("good_sum"),
-            func.sum(
-                case((ProductionEvent.event_type == "scrap", ProductionEvent.qty), else_=0)
-            ).label("scrap_sum"),
+            func.sum(case((ProductionEvent.event_type == "good", ProductionEvent.qty), else_=0)).label("good_sum"),
+            func.sum(case((ProductionEvent.event_type == "scrap", ProductionEvent.qty), else_=0)).label("scrap_sum"),
         )
         .filter(ProductionEvent.happened_at >= since)
         .one()
@@ -484,15 +526,16 @@ def dashboard_summary(
     scrap = sums.scrap_sum or 0
     trs_avg_last_hour = float(round((good / (good + scrap) * 100), 1)) if (good + scrap) > 0 else 0.0
 
-    # 3) Activités récentes
+    # 3) Activités récentes (jointures pour enrichir chaque event)
     q = (
         db.query(ProductionEvent, Machine.code, WorkOrder.number)
-          .join(Machine, Machine.id == ProductionEvent.machine_id)
-          .outerjoin(WorkOrder, WorkOrder.id == ProductionEvent.work_order_id)
-          .filter(ProductionEvent.happened_at >= since)
-          .order_by(desc(ProductionEvent.happened_at))
-          .limit(limit_recent)
+        .join(Machine, Machine.id == ProductionEvent.machine_id)
+        .outerjoin(WorkOrder, WorkOrder.id == ProductionEvent.work_order_id)
+        .filter(ProductionEvent.happened_at >= since)
+        .order_by(desc(ProductionEvent.happened_at))
+        .limit(limit_recent)
     )
+
     recent = [
         DashboardActivityItemOut(
             id=ev.id,
@@ -505,6 +548,7 @@ def dashboard_summary(
         for (ev, machine_code, wo_number) in q.all()
     ]
 
+    # Assemblage de la réponse de synthèse
     return DashboardSummaryOut(
         kpis=DashboardKPIOut(
             total_machines=total,
@@ -515,15 +559,15 @@ def dashboard_summary(
         recent=recent,
     )
 
-# -------------------------
-# Debug: liste des routes
-# -------------------------
 
+# -------------------------
+# Debug: inspection des routes
+# -------------------------
 @app.get("/routes")
 def list_routes():
-    """Expose les chemins/verbres HTTP enregistrés (debug/outillage)."""
-    out = []
-    for r in app.routes:
-        if isinstance(r, APIRoute):
-            out.append({"path": r.path, "methods": list(r.methods)})
-    return out
+    """Expose la liste des routes et leurs méthodes (outil de debug pratique)."""
+    out = []  # liste de dicts { path, methods }
+    for r in app.routes:  # itère sur toutes les routes enregistrées dans l'app
+        if isinstance(r, APIRoute):  # on ne garde que les routes HTTP (ignore websockets, etc.)
+            out.append({"path": r.path, "methods": list(r.methods)})  # ex: {"/machines", ["GET"]}
+    return out  # JSON simple utilisable pour du tooling (inspections rapides)
