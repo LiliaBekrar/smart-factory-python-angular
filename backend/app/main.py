@@ -658,6 +658,66 @@ def get_event(
 
     # --- 3) Retour (sérialisé via EventOut)
     return ev
+@app.get("/events", response_model=List[EventOut])
+def list_events(
+    # Limite le nombre de résultats (par défaut 50, max 500)
+    limit: int = Query(50, ge=1, le=500),
+
+    # Offset pour pagination (par défaut 0 → première page)
+    offset: int = Query(0, ge=0),
+
+    # Filtrer par machine (optionnel)
+    machine_id: int | None = None,
+
+    # Filtrer par type d’événement ("good", "scrap", "stop")
+    event_type: str | None = None,
+
+    # Filtrer depuis une certaine date/heure
+    since: datetime | None = None,
+
+    # Filtrer jusqu’à une certaine date/heure
+    until: datetime | None = None,
+
+    # Session DB
+    db: Session = Depends(get_db),
+
+    # Authz: accessible aux opérateurs, chefs et admin
+    user: User = Depends(require_role("operator", "chef", "admin")),
+):
+    """
+    Liste les événements de production avec filtres et pagination.
+
+    - `limit` : max de résultats par page
+    - `offset` : décalage pour parcourir les pages
+    - `machine_id` : filtre par machine spécifique
+    - `event_type` : filtre par type (good|scrap|stop)
+    - `since` / `until` : borne temporelle
+    """
+
+    # --- 1) Construire la requête SQLAlchemy de base
+    q = db.query(ProductionEvent)
+
+    # --- 2) Appliquer les filtres si fournis
+    if machine_id is not None:
+        q = q.filter(ProductionEvent.machine_id == machine_id)
+
+    if event_type is not None:
+        q = q.filter(ProductionEvent.event_type == event_type)
+
+    if since is not None:
+        q = q.filter(ProductionEvent.happened_at >= since)
+
+    if until is not None:
+        q = q.filter(ProductionEvent.happened_at <= until)
+
+    # --- 3) Tri décroissant sur la date (plus récent en premier)
+    q = q.order_by(desc(ProductionEvent.happened_at))
+
+    # --- 4) Appliquer pagination : offset + limit
+    events = q.offset(offset).limit(limit).all()
+
+    # --- 5) Retourner la liste (FastAPI va sérialiser avec EventOut)
+    return events
 
 
 # -------------------------
