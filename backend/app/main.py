@@ -43,7 +43,7 @@ from typing import List                 # types génériques (List[...] pour les
 from datetime import datetime, timedelta # horodatage UTC + fenêtres de temps
 
 # --- Imports FastAPI ---
-from fastapi import FastAPI, Query, Depends, HTTPException, status   # app, paramètres, DI, erreurs
+from fastapi import FastAPI, Query, Depends, HTTPException, status, Body   # app, paramètres, DI, erreurs
 from fastapi.middleware.cors import CORSMiddleware                   # CORS pour front séparé (dev)
 from fastapi.routing import APIRoute                                 # introspection des routes
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm  # OAuth2 (password flow)
@@ -69,6 +69,8 @@ from app.schemas import (
     DashboardSummaryOut,
     DashboardKPIOut,
     DashboardActivityItemOut,
+    EventCreate,
+    EventOut
 )
 from app.security import hash_password, verify_password, create_access_token, decode_token
 
@@ -558,6 +560,104 @@ def dashboard_summary(
         ),
         recent=recent,
     )
+
+
+
+# -------------------------
+# Operator: saisir / consulter un événement de production
+# -------------------------
+
+@app.post("/events", response_model=EventOut, status_code=201)
+def create_event(
+    # Body JSON validé par Pydantic (voir EventCreate dans app/schemas.py)
+    payload: EventCreate = Body(...),
+
+    # Session DB injectée par dépendance (ouverte/fermée proprement par get_db)
+    db: Session = Depends(get_db),
+
+    # Authz: restreint l'accès aux rôles "operator", "chef" ou "admin"
+    user: User = Depends(require_role("operator", "chef", "admin")),
+):
+    """
+    Crée un événement de production saisi par un opérateur.
+
+    Règles métier (simples) :
+      - event_type ∈ {"good","scrap","stop"}
+      - qty >= 0 ; pour "stop", qty sera forcée à 0
+      - machine_id doit exister ; work_order_id est optionnel mais doit exister si fourni
+      - happened_at : par défaut = maintenant en UTC
+      - notes : facultatif (commentaire libre)
+    """
+
+    # --- 1) Validation métier légère sur le type d'événement
+    if payload.event_type not in {"good", "scrap", "stop"}:
+        # 400 = mauvaise requête (données invalides)
+        raise HTTPException(status_code=400, detail="event_type must be one of: good|scrap|stop")
+
+    # --- 2) Validation quantité (pas de quantité négative)
+    if payload.qty < 0:
+        raise HTTPException(status_code=400, detail="qty must be >= 0")
+
+    # --- 3) La machine doit exister (clé étrangère)
+    m = db.query(Machine).get(payload.machine_id)
+    if not m:
+        # 404 = ressource non trouvée (machine inconnue)
+        raise HTTPException(status_code=404, detail="Machine not found")
+
+    # --- 4) L’OF est optionnel, mais s’il est passé il doit exister
+    if payload.work_order_id is not None:
+        wo = db.query(WorkOrder).get(payload.work_order_id)
+        if not wo:
+            raise HTTPException(status_code=404, detail="Work order not found")
+
+    # --- 5) Timestamp : si non fourni, on prend l'instant présent (UTC)
+    happened_at = payload.happened_at or datetime.utcnow()
+
+    # --- 6) Normalisation de qty : pour un "stop", on force qty=0
+    normalized_qty = payload.qty if payload.event_type in {"good", "scrap"} else 0
+
+    # --- 7) Construction de l'objet ORM à persister
+    ev = ProductionEvent(
+        machine_id=payload.machine_id,
+        work_order_id=payload.work_order_id,
+        event_type=payload.event_type,
+        qty=normalized_qty,
+        notes=payload.notes,
+        happened_at=happened_at,
+    )
+
+    # --- 8) Persistance : add → commit → refresh pour récupérer l'ID
+    db.add(ev)
+    db.commit()
+    db.refresh(ev)
+
+    # --- 9) Retourne l'objet créé ; FastAPI utilise EventOut pour la sérialisation
+    return ev
+
+
+@app.get("/events/{event_id}", response_model=EventOut)
+def get_event(
+    # event_id provient du chemin (path parameter)
+    event_id: int,
+
+    # Session DB
+    db: Session = Depends(get_db),
+
+    # Accès protégé : un opérateur (ou chef/admin) peut consulter le détail
+    user: User = Depends(require_role("operator", "chef", "admin")),
+):
+    """
+    Retourne le détail d'un événement de production existant (par son id).
+    """
+    # --- 1) Recherche en base par clé primaire
+    ev = db.query(ProductionEvent).get(event_id)
+
+    # --- 2) Si non trouvé → 404
+    if not ev:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    # --- 3) Retour (sérialisé via EventOut)
+    return ev
 
 
 # -------------------------
