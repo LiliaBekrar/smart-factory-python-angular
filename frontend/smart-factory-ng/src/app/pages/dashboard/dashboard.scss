@@ -1,0 +1,24 @@
+.dashboard .error {
+  color: var(--danger);
+}
+
+.dashboard section {
+  @extend .card;
+  padding: 16px;
+  margin-top: 16px;
+}
+
+.dashboard ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.dashboard li {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.dashboard li:last-child {
+  border-bottom: 0;
+}
