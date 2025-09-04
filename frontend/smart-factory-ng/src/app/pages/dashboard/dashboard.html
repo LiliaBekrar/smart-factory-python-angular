@@ -106,7 +106,7 @@
         <ul *ngIf="summary()?.recent?.length" class="list-group list-group-flush">
           <li *ngFor="let a of summary().recent" class="list-group-item">
             <small class="text-muted">{{ a.happened_at | date:'short' }}</small>
-            — <strong>{{ a.machine_code || 'N/A' }}</strong>
+            — <strong>{{ a.machine_name || 'N/A' }}</strong> ({{a.machine_code}})
             — {{ a.event_type }} ({{ a.qty }})
             <span *ngIf="a.work_order_number" class="text-muted">— OF {{ a.work_order_number }}</span>
           </li>

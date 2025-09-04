@@ -263,7 +263,7 @@ def recent_activities(
 
     # Requête avec jointures pour enrichir chaque event
     q = (
-        db.query(ProductionEvent, Machine.code, WorkOrder.number)
+        db.query(ProductionEvent, Machine.code, Machine.name, WorkOrder.number)
         .join(Machine, Machine.id == ProductionEvent.machine_id)
         .outerjoin(WorkOrder, WorkOrder.id == ProductionEvent.work_order_id)
         .filter(ProductionEvent.happened_at >= since)
@@ -271,16 +271,17 @@ def recent_activities(
         .limit(limit)
     )
 
-    items: List[ActivityItemOut] = []  # liste finale à renvoyer
-    for ev, machine_code, wo_number in q.all():  # itère sur les lignes retournées
+    items: List[ActivityItemOut] = []
+    for ev, machine_code, machine_name, wo_number in q.all():
         items.append(
             ActivityItemOut(
                 id=ev.id,
                 machine_id=ev.machine_id,
-                machine_code=machine_code,            # code de la machine (ex: CNC‑01)
-                work_order_id=ev.work_order_id,       # peut être None
-                work_order_number=wo_number,          # peut être None
-                event_type=ev.event_type,             # "good" | "scrap" | "stop"
+                machine_code=machine_code,
+                machine_name=machine_name,
+                work_order_id=ev.work_order_id,
+                work_order_number=wo_number,
+                event_type=ev.event_type,
                 qty=ev.qty,
                 notes=ev.notes,
                 happened_at=ev.happened_at,
@@ -530,24 +531,25 @@ def dashboard_summary(
 
     # 3) Activités récentes (jointures pour enrichir chaque event)
     q = (
-        db.query(ProductionEvent, Machine.code, WorkOrder.number)
-        .join(Machine, Machine.id == ProductionEvent.machine_id)
-        .outerjoin(WorkOrder, WorkOrder.id == ProductionEvent.work_order_id)
-        .filter(ProductionEvent.happened_at >= since)
-        .order_by(desc(ProductionEvent.happened_at))
-        .limit(limit_recent)
+        db.query(ProductionEvent, Machine.code, Machine.name, WorkOrder.number)
+          .join(Machine, Machine.id == ProductionEvent.machine_id)
+          .outerjoin(WorkOrder, WorkOrder.id == ProductionEvent.work_order_id)
+          .filter(ProductionEvent.happened_at >= since)
+          .order_by(desc(ProductionEvent.happened_at))
+          .limit(limit_recent)
     )
 
     recent = [
         DashboardActivityItemOut(
             id=ev.id,
             machine_code=machine_code,
+            machine_name=machine_name,
             event_type=ev.event_type,
             qty=ev.qty,
             happened_at=ev.happened_at,
             work_order_number=wo_number,
         )
-        for (ev, machine_code, wo_number) in q.all()
+        for (ev, machine_code, machine_name, wo_number) in q.all()
     ]
 
     # Assemblage de la réponse de synthèse
