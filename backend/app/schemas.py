@@ -79,6 +79,7 @@ class ActivityItemOut(BaseModel):
     id: int
     machine_id: int
     machine_code: str | None = None
+    machine_name: str
     work_order_id: int | None = None
     work_order_number: str | None = None
     event_type: str  # "good" | "scrap" | "stop" (cf. modèle ProductionEvent)
@@ -150,6 +151,7 @@ class DashboardActivityItemOut(BaseModel):
     """Événement simplifié pour dashboard (flux récent)."""
     id: int
     machine_code: str | None
+    machine_name: str
     event_type: str
     qty: int
     happened_at: datetime

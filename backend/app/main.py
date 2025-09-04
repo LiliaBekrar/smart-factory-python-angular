@@ -247,7 +247,7 @@ def recent_activities(
     since = datetime.utcnow() - timedelta(minutes=minutes)
 
     q = (
-        db.query(ProductionEvent, Machine.code, WorkOrder.number)
+        db.query(ProductionEvent, Machine.code, Machine.name, WorkOrder.number)
         .join(Machine, Machine.id == ProductionEvent.machine_id)
         .outerjoin(WorkOrder, WorkOrder.id == ProductionEvent.work_order_id)
         .filter(ProductionEvent.happened_at >= since)
@@ -256,12 +256,13 @@ def recent_activities(
     )
 
     items: List[ActivityItemOut] = []
-    for ev, machine_code, wo_number in q.all():
+    for ev, machine_code, machine_name, wo_number in q.all():
         items.append(
             ActivityItemOut(
                 id=ev.id,
                 machine_id=ev.machine_id,
                 machine_code=machine_code,
+                machine_name=machine_name,
                 work_order_id=ev.work_order_id,
                 work_order_number=wo_number,
                 event_type=ev.event_type,
@@ -468,7 +469,7 @@ def dashboard_summary(
 
     # 3) Activités récentes
     q = (
-        db.query(ProductionEvent, Machine.code, WorkOrder.number)
+        db.query(ProductionEvent, Machine.code, Machine.name, WorkOrder.number)
           .join(Machine, Machine.id == ProductionEvent.machine_id)
           .outerjoin(WorkOrder, WorkOrder.id == ProductionEvent.work_order_id)
           .filter(ProductionEvent.happened_at >= since)
@@ -479,12 +480,13 @@ def dashboard_summary(
         DashboardActivityItemOut(
             id=ev.id,
             machine_code=machine_code,
+            machine_name=machine_name,
             event_type=ev.event_type,
             qty=ev.qty,
             happened_at=ev.happened_at,
             work_order_number=wo_number,
         )
-        for (ev, machine_code, wo_number) in q.all()
+        for (ev, machine_code, machine_name, wo_number) in q.all()
     ]
 
     return DashboardSummaryOut(
