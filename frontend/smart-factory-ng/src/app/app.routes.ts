@@ -1,10 +1,9 @@
 import { Routes } from '@angular/router';
-import { Dashboard } from './pages/dashboard/dashboard';
-import { Machines } from './pages/machines/machines';
+import { DashboardComponent } from './pages/dashboard/dashboard';
+import { MachinesComponent } from './pages/machines/machines';
 
 export const routes: Routes = [
-  { path: 'dashboard', component: Dashboard },
-  { path: 'machines',  component: Machines },
-  { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
-  { path: '**', redirectTo: 'dashboard' },
+  { path: '', component: DashboardComponent },
+  { path: 'machines', component: MachinesComponent },
+  // { path: 'activity', loadComponent: () => import('./pages/activity/activity').then(m => m.ActivityComponent) },
 ];
