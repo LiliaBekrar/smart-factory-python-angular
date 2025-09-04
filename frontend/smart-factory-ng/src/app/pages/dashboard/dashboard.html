@@ -1,46 +1,117 @@
-<div class="dashboard">
+<!-- En-tête de section -->
+<div class="section-title">
+  <h1>Tableau de bord</h1>
+  <span class="hint">Vue d’ensemble de l’usine</span>
+  <button class="btn btn-primary btn-sm ms-auto" (click)="refresh()" [disabled]="loading()">
+    Rafraîchir
+  </button>
+</div>
 
-  <header class="header">
-    <h1>Smart Factory — Dashboard</h1>
-    <!-- bouton pour relancer l'appel API -->
-    <button (click)="refresh()" [disabled]="loading">Rafraîchir</button>
-  </header>
+<!-- Erreur éventuelle -->
+<div *ngIf="error()" class="alert alert-danger py-2">{{ error() }}</div>
 
-  <!-- État "chargement" -->
-  <p *ngIf="loading">Chargement…</p>
+<!-- Résumé KPI rapide (3 tuiles) -->
+<div class="row g-3 mb-2">
+  <div class="col-12 col-sm-6 col-lg-4">
+    <div class="card h-100">
+      <div class="card-body">
+        <div class="d-flex align-items-center justify-content-between">
+          <h3 class="mb-0">Machines</h3>
+          <span class="text-muted">Total</span>
+        </div>
+        <div class="display-6 fw-extrabold mt-1">{{ total }}</div>
+      </div>
+    </div>
+  </div>
 
-  <!-- État "erreur" -->
-  <p *ngIf="error" class="error">{{ error }}</p>
+  <div class="col-12 col-sm-6 col-lg-4">
+    <div class="card h-100">
+      <div class="card-body">
+        <div class="d-flex align-items-center justify-content-between">
+          <h3 class="mb-0">TRS</h3>
+          <span class="text-muted">Dernière heure</span>
+        </div>
+        <div class="display-6 fw-extrabold mt-1">{{ trs }}%</div>
+      </div>
+    </div>
+  </div>
 
-  <!-- État "données" -->
-  <ng-container *ngIf="summary as s">
-    <!-- KPIs -->
-    <section class="kpis">
-      <h2>KPIs (dernière heure)</h2>
-      <ul>
-        <li><strong>Total machines :</strong> {{ s.kpis?.total_machines }}</li>
-        <li><strong>Running :</strong> {{ s.kpis?.running }}</li>
-        <li><strong>Stopped :</strong> {{ s.kpis?.stopped }}</li>
-        <li><strong>TRS moyen :</strong> {{ s.kpis?.trs_avg_last_hour }} %</li>
-      </ul>
-    </section>
+  <div class="col-12 col-lg-4">
+    <div class="card h-100">
+      <div class="card-body">
+        <div class="d-flex align-items-center justify-content-between">
+          <h3 class="mb-0">États</h3>
+          <span class="text-muted">Répartition</span>
+        </div>
+        <div class="mt-2 d-flex flex-wrap gap-2">
+          <span class="badge badge-running">Running {{ running }}</span>
+          <span class="badge badge-stopped">Stopped {{ stopped }}</span>
+          <span class="badge badge-setup">Setup {{ setup }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
-    <!-- Activités récentes -->
-    <section class="recent">
-      <h2>Activités récentes</h2>
+<!-- Donut + Activités récentes -->
+<div class="row g-3">
+  <!-- Donut -->
+  <div class="col-12 col-lg-5">
+    <div class="card h-100">
+      <div class="card-header">Répartition des machines</div>
+      <div class="card-body">
+        <div class="sf-donut">
+          <canvas baseChart [data]="pieData" [options]="pieOptions">
+          </canvas>
 
-      <p *ngIf="!s.recent?.length">Aucune activité récente.</p>
+          <!-- Valeur au centre -->
+          <div class="sf-donut__center">
+            <div class="text-center">
+              <div class="value">{{ total }}</div>
+              <div class="sub">Machines</div>
+            </div>
+          </div>
+        </div>
 
-      <ul *ngIf="s.recent?.length">
-        <li *ngFor="let a of s.recent">
-          <!-- date formatée avec le date pipe Angular -->
-          <time>{{ a.happened_at | date:'short' }}</time>
-          — <span class="machine">{{ a.machine_code || 'N/A' }}</span>
-          — <span class="etype">{{ a.event_type }}</span>
-          (<span class="qty">{{ a.qty }}</span>)
-          <span *ngIf="a.work_order_number"> — OF: {{ a.work_order_number }}</span>
-        </li>
-      </ul>
-    </section>
-  </ng-container>
+        <!-- Légende personnalisée -->
+        <div class="d-flex flex-wrap gap-3 mt-3">
+          <div class="d-flex align-items-center gap-2">
+            <span class="legend-dot legend-green"></span>
+            <span class="fw-semibold">Running</span>
+            <span class="badge badge-running ms-2">{{ running }}</span>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <span class="legend-dot legend-red"></span>
+            <span class="fw-semibold">Stopped</span>
+            <span class="badge badge-stopped ms-2">{{ stopped }}</span>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <span class="legend-dot legend-amber"></span>
+            <span class="fw-semibold">Setup</span>
+            <span class="badge badge-setup ms-2">{{ setup }}</span>
+          </div>
+          <span class="ms-auto text-muted">TRS moyen : <strong>{{ trs }}%</strong></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Activités récentes (depuis /dashboard/summary.recent) -->
+  <div class="col-12 col-lg-7">
+    <div class="card h-100">
+      <div class="card-header">Activités récentes</div>
+      <div class="card-body p-0">
+        <div *ngIf="!summary()?.recent?.length" class="p-3 text-muted">Aucune activité récente.</div>
+
+        <ul *ngIf="summary()?.recent?.length" class="list-group list-group-flush">
+          <li *ngFor="let a of summary().recent" class="list-group-item">
+            <small class="text-muted">{{ a.happened_at | date:'short' }}</small>
+            — <strong>{{ a.machine_code || 'N/A' }}</strong>
+            — {{ a.event_type }} ({{ a.qty }})
+            <span *ngIf="a.work_order_number" class="text-muted">— OF {{ a.work_order_number }}</span>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
 </div>

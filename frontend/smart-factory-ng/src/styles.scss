@@ -1,46 +1,210 @@
-/* You can add global styles to this file, and also import other style files */
-/* src/styles.scss — micro design system */
+/* ========== Smart Factory — Design System (global) ========== */
+/* 0) Bootstrap d'abord (si tu l'utilises) */
+@use "bootstrap/scss/bootstrap" as *;
+/* 1) Police (Inter) */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
+
+/* 2) Variables (couleurs & tokens) */
+:root {
+  /* surfaces */
+  --sf-bg: #F6F8FA;
+  --sf-card: #FFFFFF;
+  --sf-border: #E6EAF0;
+
+  /* texte */
+  --sf-text: #0F172A;
+  /* slate-900 */
+  --sf-text-2: #475569;
+  /* slate-600 */
+  --sf-muted: #94A3B8;
+  /* slate-400 */
+
+  /* brand */
+  --sf-primary: #2F6FED;
+  /* bleu industriel */
+  --sf-primary-600: #2559C5;
+
+  /* états usine */
+  --sf-green: #1DB954;
+  /* running */
+  --sf-amber: #FFB020;
+  /* setup */
+  --sf-red: #E03131;
+  /* stopped */
+
+  /* UI */
+  --sf-radius: 16px;
+  --sf-shadow: 0 10px 30px rgba(15, 23, 42, .06);
+}
+
+/* 3) Base */
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--sf-bg);
+  color: var(--sf-text);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 4) Titres & textes */
 h1,
+.h1 {
+  font-size: clamp(1.6rem, 1.2rem + 1.2vw, 2.2rem);
+  font-weight: 800;
+  margin-bottom: .25rem;
+}
+
 h2,
-h3 {
-  margin: 0 0 .6rem;
+.h2 {
+  font-size: clamp(1.2rem, 1rem + .8vw, 1.6rem);
+  font-weight: 800;
+  margin: 0;
 }
 
-h1 {
-  font-size: 1.6rem;
+h3,
+.h3 {
+  font-size: 1.125rem;
+  font-weight: 700;
 }
 
-h2 {
-  font-size: 1.3rem;
+p,
+.lead {
+  color: var(--sf-text-2);
 }
 
-h3 {
-  font-size: 1.05rem;
-  color: var(--muted);
+/* 5) Liens & boutons (overrides Bootstrap) */
+a {
+  color: var(--sf-primary);
+  text-decoration: none;
 }
 
+a:hover {
+  color: var(--sf-primary-600);
+  text-decoration: underline;
+}
+
+.btn-primary {
+  background: var(--sf-primary);
+  border-color: var(--sf-primary);
+}
+
+.btn-primary:hover {
+  background: var(--sf-primary-600);
+  border-color: var(--sf-primary-600);
+}
+
+/* 6) Navbar */
+.navbar {
+  background: #fff !important;
+  border-bottom: 1px solid var(--sf-border);
+}
+
+/* 7) Cartes */
+.card {
+  border: 1px solid var(--sf-border) !important;
+  border-radius: var(--sf-radius);
+  box-shadow: var(--sf-shadow);
+  background: var(--sf-card);
+}
+
+.card-header {
+  background: linear-gradient(180deg, #fff, #fafbfc);
+  border-bottom: 1px solid var(--sf-border);
+  font-weight: 800;
+  color: var(--sf-text);
+}
+
+/* 8) Badges d’état (lisibles, doux) */
+.badge-running {
+  background: rgba(29, 185, 84, .12);
+  color: #0f7a3a;
+}
+
+.badge-setup {
+  background: rgba(255, 176, 32, .18);
+  color: #925d00;
+}
+
+.badge-stopped {
+  background: rgba(224, 49, 49, .14);
+  color: #8f1e1e;
+}
+
+/* 9) Section header (titre + hint) */
 .section-title {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: .6rem;
+  align-items: baseline;
+  gap: .75rem;
+  margin-bottom: .75rem;
+
+  .hint {
+    color: var(--sf-muted);
+    font-weight: 600;
+  }
 }
 
-.grid {
+/* 10) Donut chart helper (valeur centrée) */
+.sf-donut {
+  position: relative;
+  min-height: 260px;
+}
+
+.sf-donut canvas {
+  max-height: 260px;
+}
+
+.sf-donut__center {
+  position: absolute;
+  inset: 0;
   display: grid;
-  gap: 16px;
+  place-items: center;
+  pointer-events: none;
 
-  &.cols-3 {
-    grid-template-columns: repeat(3, 1fr);
+  .value {
+    font-size: 2rem;
+    font-weight: 800;
+    color: var(--sf-text);
   }
 
-  &.cols-2 {
-    grid-template-columns: repeat(2, 1fr);
+  .sub {
+    color: var(--sf-muted);
+    font-weight: 600;
+    margin-top: -4px;
   }
 }
 
-@media (max-width: 900px) {
-  .grid.cols-3 {
-    grid-template-columns: 1fr;
-  }
+/* 11) Légende dot */
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  display: inline-block;
 }
+
+.legend-green {
+  background: var(--sf-green);
+}
+
+.legend-red {
+  background: var(--sf-red);
+}
+
+.legend-amber {
+  background: var(--sf-amber);
+}
+
+/* 12) Utilitaires légers */
+.shadow-soft {
+  box-shadow: var(--sf-shadow);
+}
+
+.round-2xl {
+  border-radius: var(--sf-radius);
+}
+
+/* ========== fin du style global ========== */

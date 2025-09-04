@@ -1,19 +1,28 @@
-<!-- src/app/app.html -->
-<header class="topbar">
+<nav class="sf-navbar">
   <div class="container">
-    <div class="brand">
-      <div class="logo-dot"></div>
-      <span>Smart&nbsp;Factory</span>
+    <a class="brand" routerLink="/">
+      <span class="dot"></span>
+      Smart&nbsp;Factory
+    </a>
+
+    <ul class="nav-links">
+      <li routerLinkActive="active" [routerLinkActiveOptions]="{ exact:true }">
+        <a routerLink="/">Dashboard</a>
+      </li>
+      <li routerLinkActive="active">
+        <a routerLink="/machines">Machines</a>
+      </li>
+      <li routerLinkActive="active">
+        <a routerLink="/activity">Activité</a>
+      </li>
+    </ul>
+
+    <div class="nav-actions">
+      <a routerLink="/login" class="btn btn-outline">Connexion</a>
     </div>
-
-    <nav class="nav">
-      <a routerLink="/dashboard" routerLinkActive="active" class="nav-link">Dashboard</a>
-      <a routerLink="/machines" routerLinkActive="active" class="nav-link">Machines</a>
-      <!-- plus tard: <a routerLink="/events" class="nav-link">Saisie</a> -->
-    </nav>
   </div>
-</header>
+</nav>
 
-<main class="page container">
+<main class="sf-main container">
   <router-outlet></router-outlet>
 </main>

@@ -1,50 +1,52 @@
-import { Component, OnInit } from '@angular/core';          // décorateur @Component + cycle de vie OnInit
-import { CommonModule } from '@angular/common';             // ngIf, ngFor, pipe date, etc.
-import { ApiService } from '../../services/api';            // notre service HTTP (appels vers FastAPI)
+import { Component, OnInit, signal } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { ApiService } from '../../services/api';
+import { BaseChartDirective } from 'ng2-charts';
+import { ChartData, ChartOptions, ChartType } from 'chart.js';
 
-/**
- * Composant Dashboard (standalone)
- * - Appelle /dashboard/summary via ApiService
- * - Gère 3 états : loading / error / data (summary)
- */
 @Component({
-  selector: 'app-dashboard',       // balise HTML à utiliser <app-dashboard></app-dashboard>
-  standalone: true,                // composant standalone (Angular v15+), pas besoin d'être déclaré dans un module
-  imports: [CommonModule],         // importe ngIf, ngFor, date pipe, etc.
-  templateUrl: './dashboard.html', // ton fichier de template (tu n'utilises pas .component.html)
-  styleUrl: './dashboard.scss'     // ton fichier de styles
+  selector: 'app-dashboard',
+  standalone: true,
+  imports: [CommonModule, BaseChartDirective],
+  templateUrl: './dashboard.html',
 })
-export class Dashboard implements OnInit {
-  // --- état UI ---
-  loading = false;            // vrai pendant le chargement
-  error: string | null = null; // message d'erreur éventuel
-  summary: any = null;        // objet renvoyé par /dashboard/summary
+export class DashboardComponent implements OnInit {
+  loading = signal(false);
+  error   = signal<string | null>(null);
+  summary = signal<any>(null);
 
-  constructor(private api: ApiService) {} // injection du service HTTP
+  get total()   { return this.summary()?.kpis?.total_machines ?? 0; }
+  get running() { return this.summary()?.kpis?.running ?? 0; }
+  get stopped() { return this.summary()?.kpis?.stopped ?? 0; }
+  get setup()   { return Math.max(0, this.total - this.running - this.stopped); }
+  get trs()     { return this.summary()?.kpis?.trs_avg_last_hour ?? 0; }
 
-  // hook appelé à l'initialisation du composant (une seule fois)
-  ngOnInit(): void {
-    this.refresh(); // on charge les données dès l'arrivée sur la page
-  }
+  pieType: ChartType = 'doughnut';
+  pieData: ChartData<'doughnut'> = {
+    labels: ['Running', 'Stopped', 'Setup'],
+    datasets: [{ data: [0, 0, 0], backgroundColor: ['#1DB954', '#E03131', '#FFB020'] }]
+  };
+  pieOptions: ChartOptions<'doughnut'> = {
+    cutout: '70%',
+    plugins: { legend: { display: false } },
+    animation: { animateRotate: true, duration: 600 }
+  };
 
-  /**
-   * Recharge les données du dashboard en appelant l'API.
-   */
-  refresh(): void {
-    this.loading = true;     // active le spinner
-    this.error = null;       // reset l'erreur
+  constructor(private api: ApiService) {}
+  ngOnInit() { this.refresh(); }
 
-    // Appel HTTP → GET /dashboard/summary
+  refresh() {
+    this.loading.set(true); this.error.set(null);
     this.api.getDashboardSummary().subscribe({
-      next: (res) => {
-        this.summary = res;  // stocke la réponse (sera utilisée par le template)
-        this.loading = false;
+      next: (data) => {
+        this.summary.set(data);
+        this.pieData = {
+          ...this.pieData,
+          datasets: [{ ...this.pieData.datasets[0], data: [this.running, this.stopped, this.setup] }]
+        };
+        this.loading.set(false);
       },
-      error: (err) => {
-        // essaie d'afficher un message renvoyé par l'API, sinon générique
-        this.error = err?.error?.detail || 'Erreur lors du chargement du dashboard';
-        this.loading = false;
-      }
+      error: (err) => { console.error(err); this.error.set('Erreur chargement dashboard'); this.loading.set(false); }
     });
   }
 }

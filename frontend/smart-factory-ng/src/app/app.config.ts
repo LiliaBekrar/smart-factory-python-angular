@@ -6,6 +6,10 @@ import { provideHttpClient } from '@angular/common/http';
 
 import { registerLocaleData } from '@angular/common';
 import localeFr from '@angular/common/locales/fr';
+
+// 👇 Charts (ng2-charts + Chart.js registerables)
+import { provideCharts, withDefaultRegisterables } from 'ng2-charts';
+
 registerLocaleData(localeFr); // enregistre les formats FR (dates, nombres, etc.)
 
 export const appConfig: ApplicationConfig = {
@@ -13,5 +17,8 @@ export const appConfig: ApplicationConfig = {
     provideRouter(routes),
     provideHttpClient(),
     { provide: LOCALE_ID, useValue: 'fr-FR' }, // force la locale FR
+
+    // 👇 nécessaire pour <canvas baseChart> (Chart.js)
+    provideCharts(withDefaultRegisterables()),
   ],
 };
