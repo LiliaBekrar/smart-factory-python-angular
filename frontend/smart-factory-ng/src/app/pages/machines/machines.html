@@ -1,0 +1,56 @@
+<div class="machines-page">
+  <header class="bar">
+    <h2>Parc Machines</h2>
+    <div class="actions">
+      <button (click)="refresh()" [disabled]="loading()">Rafraîchir</button>
+    </div>
+  </header>
+
+  <p *ngIf="loading()">Chargement…</p>
+  <p *ngIf="error()" class="error">{{ error() }}</p>
+
+  <!-- résumé en 3 gros cercles -->
+  <section class="summary" *ngIf="machines().length">
+    <div class="stat">
+      <div class="big-dot running">
+        <div class="value">{{ running().length }}</div>
+      </div>
+      <div class="label">En marche</div>
+    </div>
+
+    <div class="stat">
+      <div class="big-dot stopped">
+        <div class="value">{{ stopped().length }}</div>
+      </div>
+      <div class="label">À l’arrêt</div>
+    </div>
+
+    <div class="stat">
+      <div class="big-dot setup">
+        <div class="value">{{ setup().length }}</div>
+      </div>
+      <div class="label">Réglage</div>
+    </div>
+  </section>
+
+  <!-- filtres -->
+  <nav class="filters" *ngIf="machines().length">
+    <button [class.active]="filter()==='all'" (click)="setFilter('all')">Toutes</button>
+    <button [class.active]="filter()==='running'" (click)="setFilter('running')">En marche</button>
+    <button [class.active]="filter()==='stopped'" (click)="setFilter('stopped')">À l’arrêt</button>
+    <button [class.active]="filter()==='setup'" (click)="setFilter('setup')">Réglage</button>
+  </nav>
+
+  <!-- nuage de bulles (une bulle = une machine) -->
+  <section class="bubbles" *ngIf="filtered().length">
+    <div class="bubble" *ngFor="let m of filtered()" [class.running]="m.status==='running'"
+      [class.stopped]="m.status==='stopped'" [class.setup]="m.status==='setup'" [title]="machineTooltip(m)">
+      <div class="code">{{ m.code }}</div>
+      <div class="name">{{ m.name }}</div>
+    </div>
+  </section>
+
+  <p *ngIf="machines().length && !filtered().length" class="empty">
+    Aucun résultat pour ce filtre.
+  </p>
+</div>

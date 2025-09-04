@@ -1,0 +1,46 @@
+<div class="dashboard">
+
+  <header class="header">
+    <h1>Smart Factory — Dashboard</h1>
+    <!-- bouton pour relancer l'appel API -->
+    <button (click)="refresh()" [disabled]="loading">Rafraîchir</button>
+  </header>
+
+  <!-- État "chargement" -->
+  <p *ngIf="loading">Chargement…</p>
+
+  <!-- État "erreur" -->
+  <p *ngIf="error" class="error">{{ error }}</p>
+
+  <!-- État "données" -->
+  <ng-container *ngIf="summary as s">
+    <!-- KPIs -->
+    <section class="kpis">
+      <h2>KPIs (dernière heure)</h2>
+      <ul>
+        <li><strong>Total machines :</strong> {{ s.kpis?.total_machines }}</li>
+        <li><strong>Running :</strong> {{ s.kpis?.running }}</li>
+        <li><strong>Stopped :</strong> {{ s.kpis?.stopped }}</li>
+        <li><strong>TRS moyen :</strong> {{ s.kpis?.trs_avg_last_hour }} %</li>
+      </ul>
+    </section>
+
+    <!-- Activités récentes -->
+    <section class="recent">
+      <h2>Activités récentes</h2>
+
+      <p *ngIf="!s.recent?.length">Aucune activité récente.</p>
+
+      <ul *ngIf="s.recent?.length">
+        <li *ngFor="let a of s.recent">
+          <!-- date formatée avec le date pipe Angular -->
+          <time>{{ a.happened_at | date:'short' }}</time>
+          — <span class="machine">{{ a.machine_code || 'N/A' }}</span>
+          — <span class="etype">{{ a.event_type }}</span>
+          (<span class="qty">{{ a.qty }}</span>)
+          <span *ngIf="a.work_order_number"> — OF: {{ a.work_order_number }}</span>
+        </li>
+      </ul>
+    </section>
+  </ng-container>
+</div>
