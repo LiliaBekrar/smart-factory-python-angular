@@ -111,7 +111,15 @@ class TokenOut(BaseModel):
     access_token: str              # jeton JWT
     token_type: str = "bearer"     # type de token (par défaut "bearer")
 
+class UserCreate(BaseModel):
+    email: EmailStr
+    password: str
+    role: str = "operator"  # operator|chef|admin
 
+class UserUpdate(BaseModel):
+    email: EmailStr | None = None
+    password: str | None = None
+    role: str | None = None
 # -------------------------
 # Machines (CRUD)
 # -------------------------

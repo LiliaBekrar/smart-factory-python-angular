@@ -1,0 +1,44 @@
+<div class="card">
+  <h2>Nouvel événement</h2>
+
+  <form (ngSubmit)="submit()" #form="ngForm">
+    <!-- Machine -->
+    <label>Machine</label>
+    <select [(ngModel)]="payload.machine_id" name="machine" required>
+      <option [ngValue]="null" disabled>— choisir —</option>
+      <option *ngFor="let m of machines()" [ngValue]="m.id">
+        {{ m.code }} — {{ m.name }}
+      </option>
+    </select>
+
+    <!-- Type -->
+    <label>Type d’événement</label>
+    <select [(ngModel)]="payload.event_type" name="eventType" required (change)="onTypeChange()">
+      <option [ngValue]="'good'">Bonne pièce</option>
+      <option [ngValue]="'scrap'">Rebut</option>
+      <option [ngValue]="'stop'">Arrêt</option>
+    </select>
+
+    <!-- Quantité (désactivé si stop) -->
+    <label>Quantité</label>
+    <input type="number" min="0" [(ngModel)]="payload.qty" name="qty" [disabled]="payload.event_type === 'stop'"
+      required />
+
+    <!-- OF (facultatif) -->
+    <label>Ordre de fabrication (optionnel)</label>
+    <input type="number" [(ngModel)]="payload.work_order_id" name="wo" placeholder="id OF" />
+
+    <!-- Notes -->
+    <label>Notes</label>
+    <textarea [(ngModel)]="payload.notes" name="notes" rows="3" placeholder="commentaire"></textarea>
+
+    <div class="actions">
+      <button class="btn" type="submit" [disabled]="loading() || !form.form.valid">Enregistrer</button>
+      <button class="btn btn-outline" type="button" (click)="reset()">Réinitialiser</button>
+    </div>
+
+    <p *ngIf="loading()">Envoi en cours…</p>
+    <p *ngIf="error()" class="error">{{ error() }}</p>
+    <p *ngIf="success()" class="success">✅ Événement enregistré</p>
+  </form>
+</div>

@@ -61,6 +61,8 @@ from app.schemas import (
     KPIOut,
     ActivityItemOut,
     UserOut,
+    UserCreate,
+    UserUpdate,
     SignupIn,
     LoginIn,
     TokenOut,
@@ -814,6 +816,62 @@ def list_events(
     # --- 5) Retourner la liste (FastAPI va sérialiser avec EventOut)
     return events
 
+# --- Admin: liste utilisateurs ---
+@app.get("/admin/users", response_model=list[UserOut])
+def admin_list_users(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_role("admin")),
+):
+    return db.query(User).order_by(User.id).all()
+
+# --- Admin: créer utilisateur ---
+@app.post("/admin/users", response_model=UserOut, status_code=201)
+def admin_create_user(
+    body: UserCreate,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_role("admin")),
+):
+    if db.query(User).filter(User.email == body.email).first():
+        raise HTTPException(status_code=400, detail="Email already exists")
+    u = User(email=body.email, hashed_password=hash_password(body.password), role=body.role)
+    db.add(u); db.commit(); db.refresh(u)
+    return u
+
+# --- Admin: MAJ utilisateur ---
+@app.patch("/admin/users/{user_id}", response_model=UserOut)
+def admin_update_user(
+    user_id: int,
+    body: UserUpdate,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_role("admin")),
+):
+    u = db.query(User).get(user_id)
+    if not u:
+        raise HTTPException(status_code=404, detail="User not found")
+    data = body.dict(exclude_unset=True)
+    if "email" in data:
+        if db.query(User).filter(User.email == data["email"], User.id != user_id).first():
+            raise HTTPException(status_code=400, detail="Email already exists")
+        u.email = data["email"]
+    if "password" in data:
+        u.hashed_password = hash_password(data["password"])
+    if "role" in data:
+        u.role = data["role"]
+    db.commit(); db.refresh(u)
+    return u
+
+# --- Admin: supprimer ---
+@app.delete("/admin/users/{user_id}")
+def admin_delete_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_role("admin")),
+):
+    u = db.query(User).get(user_id)
+    if not u:
+        raise HTTPException(status_code=404, detail="User not found")
+    db.delete(u); db.commit()
+    return {"ok": True}
 
 # -------------------------
 # Debug: inspection des routes

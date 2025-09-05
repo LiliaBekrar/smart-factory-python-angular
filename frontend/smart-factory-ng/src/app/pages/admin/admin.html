@@ -1,0 +1,48 @@
+<!-- src/app/pages/admin/admin.html -->
+<h2>Administration</h2>
+
+<section class="card">
+  <h3>Créer un utilisateur</h3>
+  <form (ngSubmit)="add()">
+    <input [(ngModel)]="email" name="email" type="email" placeholder="email" required>
+    <input [(ngModel)]="password" name="password" type="password" placeholder="mot de passe" required>
+    <select [(ngModel)]="role" name="role">
+      <option value="operator">operator</option>
+      <option value="chef">chef</option>
+      <option value="admin">admin</option>
+    </select>
+    <button type="submit">Créer</button>
+  </form>
+  <p class="error" *ngIf="error">{{error}}</p>
+</section>
+
+<section class="card">
+  <h3>Utilisateurs</h3>
+  <table class="table">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Email</th>
+        <th>Rôle</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr *ngFor="let u of users()">
+        <td>{{u.id}}</td>
+        <td>{{u.email}}</td>
+        <td>
+          <select [ngModel]="u.role" (ngModelChange)="changeRole(u,$event)">
+            <option value="operator">operator</option>
+            <option value="chef">chef</option>
+            <option value="admin">admin</option>
+          </select>
+        </td>
+        <td>
+          <button (click)="resetPwd(u)">Reset pwd</button>
+          <button (click)="remove(u)">Supprimer</button>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</section>
