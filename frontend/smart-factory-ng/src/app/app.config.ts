@@ -2,7 +2,9 @@
 import { ApplicationConfig, LOCALE_ID } from '@angular/core';
 import { provideRouter } from '@angular/router';
 import { routes } from './app.routes';
-import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClient, withInterceptors } from '@angular/common/http';
+import { authInterceptor } from './services/auth.interceptor';
+
 
 import { registerLocaleData } from '@angular/common';
 import localeFr from '@angular/common/locales/fr';
@@ -15,7 +17,7 @@ registerLocaleData(localeFr); // enregistre les formats FR (dates, nombres, etc.
 export const appConfig: ApplicationConfig = {
   providers: [
     provideRouter(routes),
-    provideHttpClient(),
+    provideHttpClient(withInterceptors([authInterceptor])),
     { provide: LOCALE_ID, useValue: 'fr-FR' }, // force la locale FR
 
     // 👇 nécessaire pour <canvas baseChart> (Chart.js)

@@ -15,10 +15,21 @@
       <li routerLinkActive="active">
         <a routerLink="/activity">Activité</a>
       </li>
+
+      <!-- Liens réservés aux connectés -->
+      <ng-container *ngIf="auth.isLoggedIn()">
+        <li routerLinkActive="active">
+          <a routerLink="/events/new">+ Événement</a>
+        </li>
+        <li routerLinkActive="active" *ngIf="auth.role()==='admin' || auth.role()==='chef'">
+          <a routerLink="/admin">Admin</a>
+        </li>
+      </ng-container>
     </ul>
 
     <div class="nav-actions">
-      <a routerLink="/login" class="btn btn-outline">Connexion</a>
+      <a *ngIf="!auth.isLoggedIn()" routerLink="/login" class="btn btn-outline">Connexion</a>
+      <button *ngIf="auth.isLoggedIn()" class="btn" (click)="auth.logout()">Déconnexion</button>
     </div>
   </div>
 </nav>

@@ -1,99 +1,108 @@
-# backend/app/seed.py
-from datetime import datetime, timedelta
+# app/seed.py
+from datetime import datetime, timedelta, date
+import random
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy.dialects.postgresql import insert  # pour ON CONFLICT DO NOTHING
+from sqlalchemy import select, func
 
 from .db import SessionLocal
-from .models import User, Machine, WorkOrder, ProductionEvent
+from .models import Machine, WorkOrder, ProductionEvent, User
 from .security import hash_password
 
-def upsert_user(db: Session, email: str, password: str, role: str = "chef") -> User:
-    u = db.query(User).filter(User.email == email).first()
-    if u:
-        return u
-    u = User(email=email, hashed_password=hash_password(password), role=role)
-    db.add(u); db.commit(); db.refresh(u)
-    return u
 
-def upsert_machine(db: Session, code: str, name: str, status: str, target_rate_per_hour: int) -> Machine:
-    m = db.query(Machine).filter(Machine.code == code).first()
-    if m:
-        # on synchronise les champs utiles au passage
-        m.name = name
-        m.status = status
-        m.target_rate_per_hour = target_rate_per_hour
-        db.commit(); db.refresh(m)
-        return m
-    m = Machine(code=code, name=name, status=status, target_rate_per_hour=target_rate_per_hour)
-    db.add(m); db.commit(); db.refresh(m)
-    return m
-
-def upsert_work_order(db: Session, number: str, client: str, part_ref: str, target_qty: int) -> WorkOrder:
-    w = db.query(WorkOrder).filter(WorkOrder.number == number).first()
-    if w:
-        return w
-    w = WorkOrder(number=number, client=client, part_ref=part_ref, target_qty=target_qty)
-    db.add(w); db.commit(); db.refresh(w)
-    return w
-
-def add_event_if_missing(db: Session, *, machine_id: int, work_order_id: int | None,
-                         event_type: str, qty: int, happened_at: datetime, notes: str | None = None):
-    """Évite les doublons exacts (machine, OF, type, qty, seconde proche)."""
-    exists = (
-        db.query(ProductionEvent)
-          .filter(
-              ProductionEvent.machine_id == machine_id,
-              (ProductionEvent.work_order_id == work_order_id) if work_order_id is not None else ProductionEvent.work_order_id.is_(None),
-              ProductionEvent.event_type == event_type,
-              ProductionEvent.qty == qty,
-              # Postgres: compare à la seconde près pour simplifier
-              func.date_trunc("second", ProductionEvent.happened_at) == func.date_trunc("second", happened_at),
-          )
-          .first()
-    )
-    if exists:
-        return
-    ev = ProductionEvent(
-        machine_id=machine_id,
-        work_order_id=work_order_id,
-        event_type=event_type,
-        qty=qty,
-        happened_at=happened_at,
-        notes=notes,
-    )
-    db.add(ev)
-    db.commit()
-
-def run():
-    db = SessionLocal()
+def seed():
+    db: Session = SessionLocal()
     try:
-        # 1) User chef
-        chef = upsert_user(db, email="chef@test.fr", password="pass1234", role="chef")
+        # Log : vérifie qu'on cible la bonne base
+        print("Seeding DB ->", db.get_bind().url)
 
-        # 2) Machines (upsert par code)
-        m1 = upsert_machine(db, code="CNC-01", name="Fraiseuse Mazak", status="running", target_rate_per_hour=40)
-        m2 = upsert_machine(db, code="CNC-02", name="Tour Haas",      status="running", target_rate_per_hour=55)
-        m3 = upsert_machine(db, code="CNC-03", name="5 axes DMG",     status="setup",   target_rate_per_hour=30)
+        # --- Utilisateurs (idempotent) ---
+        users_payload = [
+            {"email": "admin@test.fr", "hashed_password": hash_password("pass1234"), "role": "admin"},
+            {"email": "chef@test.fr",  "hashed_password": hash_password("pass1234"), "role": "chef"},
+            {"email": "op@test.fr",    "hashed_password": hash_password("pass1234"), "role": "operator"},
+        ]
 
-        # 3) Work orders (upsert par number)
-        w1 = upsert_work_order(db, number="OF-2025-0001", client="ACME",   part_ref="P-12", target_qty=200)
-        w2 = upsert_work_order(db, number="OF-2025-0002", client="Globex", part_ref="R-77", target_qty=120)
+        # Insère chaque user s'il manque (nécessite un index/contrainte unique sur users.email)
+        for u in users_payload:
+            stmt = insert(User).values(**u).on_conflict_do_nothing(index_elements=["email"])
+            db.execute(stmt)
+        total_users = db.scalar(select(func.count()).select_from(User))
+        print(f"✔ users ok (présents: {total_users}) – admin/chef/op créés si manquants")
 
-        # 4) Quelques events récents
-        now = datetime.utcnow()
-        for args in [
-            dict(machine_id=m1.id, work_order_id=w1.id, event_type="good",  qty=3, happened_at=now - timedelta(minutes=30), notes="Lancement"),
-            dict(machine_id=m1.id, work_order_id=w1.id, event_type="good",  qty=2, happened_at=now - timedelta(minutes=10)),
-            dict(machine_id=m1.id, work_order_id=w1.id, event_type="scrap", qty=1, happened_at=now - timedelta(minutes=5),  notes="Bavure"),
-            dict(machine_id=m2.id, work_order_id=w2.id, event_type="good",  qty=4, happened_at=now - timedelta(minutes=20)),
-            dict(machine_id=m2.id, work_order_id=w2.id, event_type="good",  qty=2, happened_at=now - timedelta(minutes=3)),
-            dict(machine_id=m3.id, work_order_id=None,  event_type="stop",  qty=0, happened_at=now - timedelta(minutes=1),  notes="Chgt d’outils"),
-        ]:
-            add_event_if_missing(db, **args)
+        # --- Machines ---
+        if db.scalar(select(func.count()).select_from(Machine)) == 0:
+            ms = [
+                Machine(name="Fraiseuse Mazak", code="CNC-01", status="running", target_rate_per_hour=40),
+                Machine(name="Tour Haas",       code="CNC-02", status="running", target_rate_per_hour=55),
+                Machine(name="5 axes DMG",      code="CNC-03", status="setup",   target_rate_per_hour=30),
+                Machine(name="Centre Hermle",   code="CNC-04", status="stopped", target_rate_per_hour=25),
+                Machine(name="Robot Fanuc",     code="ROB-01", status="running", target_rate_per_hour=80),
+            ]
+            db.add_all(ms)
+            db.flush()
+            print(f"✔ {len(ms)} machines")
+        else:
+            print("↳ machines déjà présentes")
 
-        print("✅ Seed OK : user+machines+work_orders+events")
+        # --- OF ---
+        if db.scalar(select(func.count()).select_from(WorkOrder)) == 0:
+            w1 = WorkOrder(number="OF-2025-0001", client="ACME",    part_ref="P-12", target_qty=200, due_on=date.today()+timedelta(days=7))
+            w2 = WorkOrder(number="OF-2025-0002", client="Globex",  part_ref="R-77", target_qty=120, due_on=date.today()+timedelta(days=3))
+            w3 = WorkOrder(number="OF-2025-0003", client="Initech", part_ref="K-03", target_qty=500, due_on=date.today()+timedelta(days=14))
+            db.add_all([w1, w2, w3])
+            db.flush()
+            print("✔ 3 work orders")
+        else:
+            print("↳ work orders déjà présents")
+
+        # --- Événements (répartis sur 30 jours) ---
+        if db.scalar(select(func.count()).select_from(ProductionEvent)) == 0:
+            machines = db.query(Machine).all()
+            wos = db.query(WorkOrder).all()
+            now = datetime.utcnow()
+            events: list[ProductionEvent] = []
+
+            def add_ev(m, wo, kind, qty, minutes_ago, note=None):
+                events.append(ProductionEvent(
+                    machine_id=m.id,
+                    work_order_id=wo.id if wo else None,
+                    event_type=kind,  # "good"|"scrap"|"stop"
+                    qty=qty,
+                    notes=note,
+                    happened_at=now - timedelta(minutes=minutes_ago),
+                ))
+
+            rng = random.Random(42)
+            for day in range(0, 30):
+                for m in machines:
+                    for _ in range(rng.randint(3, 6)):
+                        kind = rng.choices(["good", "scrap", "stop"], weights=[0.75, 0.15, 0.10])[0]
+                        qty  = rng.randint(1, 8) if kind in ("good", "scrap") else 0
+                        wo   = rng.choice(wos + [None])
+                        minutes_ago = day * 24 * 60 + rng.randint(0, 24 * 60 - 1)
+                        note = None
+                        if kind == "scrap":
+                            note = rng.choice(["copeau long", "outil usé", "mauvaise cote", "bavure"])
+                        if kind == "stop":
+                            note = rng.choice(["changement d'outil", "maintenance", "pause", "alimentation matière"])
+                        add_ev(m, wo, kind, qty, minutes_ago, note)
+
+            db.add_all(events)
+            print(f"✔ {len(events)} événements")
+        else:
+            print("↳ événements déjà présents, pas de duplication")
+
+        db.commit()
+        print("✅ Seed OK (users + machines + OF + events)")
+
+    except Exception as e:
+        db.rollback()
+        print("❌ Seed échoué → rollback :", repr(e))
+        raise
     finally:
         db.close()
 
+
 if __name__ == "__main__":
-    run()
+    seed()

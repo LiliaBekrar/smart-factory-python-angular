@@ -1,57 +1,241 @@
-.filters {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  margin-bottom: 12px;
+/* ========== Activity Page ========== */
 
-  select,
-  button {
-    padding: 6px 10px;
+.activity-page {
+  display: grid;
+  gap: 16px;
+
+  /* Header + filtres */
+  .bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    background: var(--sf-card);
+    border: 1px solid var(--sf-border);
+    border-radius: var(--sf-radius);
+    box-shadow: var(--sf-shadow);
+
+    h2 {
+      margin: 0;
+      font-weight: 800;
+      color: var(--sf-text);
+    }
+
+    .filters {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+
+      label {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--sf-text-2);
+        font-weight: 600;
+        margin: 0;
+      }
+
+      /* Select stylé, compatible Safari/Chrome/Firefox */
+      select {
+        appearance: none;
+        -webkit-appearance: none;
+        -moz-appearance: none;
+
+        background: var(--sf-bg);
+        color: var(--sf-text);
+        border: 1px solid var(--sf-border);
+        border-radius: 10px;
+        padding: 8px 36px 8px 10px;
+        /* place pour la flèche */
+        line-height: 1.1;
+        font-weight: 600;
+        cursor: pointer;
+        position: relative;
+      }
+
+      /* Flèche du select (pseudo-wrapper) */
+      label {
+        position: relative;
+      }
+
+      label::after {
+        content: "";
+        position: absolute;
+        right: 10px;
+        top: 50%;
+        width: 0;
+        height: 0;
+        border-left: 5px solid transparent;
+        border-right: 5px solid transparent;
+        border-top: 6px solid var(--sf-text-2);
+        transform: translateY(-50%);
+        pointer-events: none;
+      }
+
+      /* Bouton rafraîchir */
+      button {
+        background: var(--sf-primary);
+        border: 1px solid var(--sf-primary);
+        color: #fff;
+        font-weight: 700;
+        padding: 8px 12px;
+        border-radius: 10px;
+        cursor: pointer;
+        transition: filter .15s ease, transform .02s ease;
+
+        &:hover {
+          filter: brightness(0.95);
+        }
+
+        &:active {
+          transform: translateY(1px);
+        }
+
+        &:disabled {
+          opacity: .6;
+          cursor: not-allowed;
+        }
+      }
+    }
+  }
+
+  /* Liste d'activité */
+  .activity-list {
+    background: var(--sf-card);
+    border: 1px solid var(--sf-border);
+    border-radius: var(--sf-radius);
+    box-shadow: var(--sf-shadow);
+    padding: 10px 0;
+
+    p {
+      margin: 0;
+      padding: 12px 14px;
+      color: var(--sf-text-2);
+    }
+
+    ul {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+
+      li {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--sf-border);
+        flex-wrap: wrap;
+
+        &:last-child {
+          border-bottom: 0;
+        }
+
+        .machine {
+          font-weight: 800;
+          color: var(--sf-text);
+          margin-right: 4px;
+        }
+
+        .badge {
+          padding: 2px 8px;
+          border-radius: 999px;
+          font-size: .75rem;
+          font-weight: 700;
+          text-transform: capitalize;
+          border: 1px solid var(--sf-border);
+          background: #fff;
+          color: var(--sf-text-2);
+
+          &.good {
+            background: rgba(29, 185, 84, .12);
+            color: #0f7a3a;
+          }
+
+          &.scrap {
+            background: rgba(224, 49, 49, .14);
+            color: #8f1e1e;
+          }
+
+          &.stop {
+            background: rgba(255, 176, 32, .18);
+            color: #925d00;
+          }
+        }
+
+        .at {
+          color: var(--sf-muted);
+          font-size: .875rem;
+          white-space: nowrap;
+        }
+
+        .wo {
+          color: var(--sf-text-2);
+          font-size: .85rem;
+          background: var(--sf-bg);
+          border: 1px solid var(--sf-border);
+          padding: .15rem .5rem;
+          border-radius: 999px;
+          white-space: nowrap;
+        }
+
+        .notes {
+          color: var(--sf-text);
+          opacity: .85;
+          font-size: .95rem;
+          margin-left: auto;
+          /* pousse les notes à droite, revient dessous en mobile via wrap */
+        }
+
+        /* Resserre un peu la croix "×" avec la qty */
+        .qty,
+        span:has(+ .at) {
+          font-variant-numeric: tabular-nums;
+          font-weight: 700;
+          color: var(--sf-text);
+        }
+      }
+    }
+
+    /* Erreur détaillée */
+    .error {
+      margin: 10px 14px;
+      color: var(--sf-red);
+      background: color-mix(in srgb, var(--sf-red) 8%, transparent);
+      border: 1px solid color-mix(in srgb, var(--sf-red) 24%, transparent);
+      padding: 10px 12px;
+      border-radius: 12px;
+
+      p {
+        padding: 0;
+      }
+
+      pre {
+        margin: 8px 0 0;
+        border: 1px solid rgba(255, 255, 255, .08);
+      }
+    }
   }
 }
 
-.activity-list {
-  ul {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-  }
+/* Petites améliorations responsive */
+@media (max-width: 640px) {
+  .activity-page .bar {
+    flex-direction: column;
+    align-items: flex-start;
 
-  li {
-    padding: 8px 10px;
-    border-bottom: 1px solid #eee;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-
-  .machine {
-    min-width: 160px;
-  }
-
-  .badge {
-    border-radius: 999px;
-    padding: 2px 8px;
-    font-size: 12px;
-
-    &.good {
-      background: #e6f6ea;
-      color: #137a2a;
-    }
-
-    &.scrap {
-      background: #fde8e8;
-      color: #b42318;
-    }
-
-    &.stop {
-      background: #fff3cd;
-      color: #8a6d3b;
+    .filters {
+      width: 100%;
+      justify-content: flex-start;
     }
   }
 
-  .notes {
-    color: #667085;
-    font-style: italic;
+  .activity-page .activity-list ul li {
+    .notes {
+      flex-basis: 100%;
+      margin-left: 0;
+      margin-top: 4px;
+    }
   }
 }
