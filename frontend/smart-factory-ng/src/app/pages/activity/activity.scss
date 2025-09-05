@@ -1,0 +1,57 @@
+.filters {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 12px;
+
+  select,
+  button {
+    padding: 6px 10px;
+  }
+}
+
+.activity-list {
+  ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  li {
+    padding: 8px 10px;
+    border-bottom: 1px solid #eee;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .machine {
+    min-width: 160px;
+  }
+
+  .badge {
+    border-radius: 999px;
+    padding: 2px 8px;
+    font-size: 12px;
+
+    &.good {
+      background: #e6f6ea;
+      color: #137a2a;
+    }
+
+    &.scrap {
+      background: #fde8e8;
+      color: #b42318;
+    }
+
+    &.stop {
+      background: #fff3cd;
+      color: #8a6d3b;
+    }
+  }
+
+  .notes {
+    color: #667085;
+    font-style: italic;
+  }
+}

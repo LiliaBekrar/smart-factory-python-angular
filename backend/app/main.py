@@ -432,6 +432,14 @@ def create_machine(
 
     return m  # sera sérialisé via MachineOut
 
+@app.get("/machines/{machine_id}", response_model=MachineOut)
+def get_machine(machine_id: int, db: Session = Depends(get_db)):
+    m = db.query(Machine).get(machine_id)
+    if not m:
+        raise HTTPException(status_code=404, detail="Machine not found")
+    return m
+
+
 
 @app.patch("/machines/{machine_id}", response_model=MachineOut)
 def update_machine(

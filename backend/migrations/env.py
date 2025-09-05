@@ -15,7 +15,7 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 def run_migrations_offline():
-    url = settings.DATABASE_URL
+    url = settings.database_url
     context.configure(url=url, target_metadata=target_metadata,
                       literal_binds=True, dialect_opts={"paramstyle": "named"})
     with context.begin_transaction():
@@ -23,7 +23,7 @@ def run_migrations_offline():
 
 def run_migrations_online():
     configuration = config.get_section(config.config_ini_section)
-    configuration["sqlalchemy.url"] = settings.DATABASE_URL
+    configuration["sqlalchemy.url"] = settings.database_url
     connectable = engine_from_config(configuration, prefix="sqlalchemy.", poolclass=pool.NullPool)
     with connectable.connect() as connection:
         context.configure(connection=connection, target_metadata=target_metadata)

@@ -1,0 +1,47 @@
+<div class="activity-page">
+  <header class="bar">
+    <h2>Activité récente</h2>
+    <div class="filters">
+      <!-- Machine -->
+      <label>
+        Machine&nbsp;
+        <select [ngModel]="selectedMachineId()" (ngModelChange)="selectedMachineId.set(+($event) || 0); refresh()">
+          <option [ngValue]="0">Toutes</option>
+          <option *ngFor="let m of machines()" [ngValue]="m.id">{{ m.name }}</option>
+        </select>
+      </label>
+
+      <!-- Période -->
+      <label>
+        Période&nbsp;
+        <select [ngModel]="selectedPeriod()" (ngModelChange)="selectedPeriod.set($event); refresh()">
+          <option *ngFor="let p of periods" [ngValue]="p.key">{{ p.label }}</option>
+        </select>
+      </label>
+
+      <button (click)="refresh()" [disabled]="loading()">Rafraîchir</button>
+    </div>
+  </header>
+
+  <div class="activity-list">
+    <p *ngIf="loading()">Chargement…</p>
+    <p *ngIf="error()" class="error">{{ error() }}</p>
+
+    <ul *ngIf="!loading() && items().length">
+      <li *ngFor="let ev of items()">
+        <strong class="machine">
+          {{ ev.machine_name || ev.machine_code || ('#' + ev.machine_id) }}
+        </strong>
+        <span class="badge" [class.good]="ev.event_type==='good'" [class.scrap]="ev.event_type==='scrap'"
+          [class.stop]="ev.event_type==='stop'">
+          {{ ev.event_type }}
+        </span>
+        <span *ngIf="ev.event_type!=='stop'">×{{ ev.qty }}</span>
+        <span class="at">• {{ ev.happened_at | date:'short' }}</span>
+        <span class="wo" *ngIf="ev.work_order_number">— OF {{ ev.work_order_number }}</span>
+        <span class="notes" *ngIf="ev.notes">• {{ ev.notes }}</span>
+      </li>
+    </ul>
+
+    <p *ngIf="!loading() && !items().length">Aucune activité sur cette période.</p>
+  </div>
