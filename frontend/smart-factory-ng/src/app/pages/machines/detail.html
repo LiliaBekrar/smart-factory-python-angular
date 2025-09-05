@@ -12,8 +12,63 @@
     <div><strong>Cadence cible :</strong> {{ m.target_rate_per_hour }} / h</div>
   </section>
 
+  <!-- KPIs -->
+  <section class="kpis row g-3">
+    <!-- KPI Journée (24h) -->
+    <div class="col-12 col-md-6">
+      <div class="card h-100">
+        <div class="card-header">KPI — Dernières 24h</div>
+        <div class="card-body">
+          <div *ngIf="!kpiDay()">Chargement…</div>
+          <ng-container *ngIf="kpiDay() as k">
+            <div class="d-flex flex-wrap gap-4">
+              <div>
+                <div class="text-muted">Bons</div>
+                <div class="display-6 fw-bold text-succes">{{ k.good }}</div>
+              </div>
+              <div>
+                <div class="text-muted">Rebuts</div>
+                <div class="display-6 fw-bold text-danger">{{ k.scrap }}</div>
+              </div>
+              <div>
+                <div class="text-muted">Qualité (TRS)</div>
+                <div class="display-6 fw-bold">{{ k.trs }}%</div>
+              </div>
+            </div>
+          </ng-container>
+        </div>
+      </div>
+    </div>
+
+    <!-- KPI Global -->
+    <div class="col-12 col-md-6">
+      <div class="card h-100">
+        <div class="card-header">KPI — Global</div>
+        <div class="card-body">
+          <div *ngIf="!kpiAll()">Chargement…</div>
+          <ng-container *ngIf="kpiAll() as k">
+            <div class="d-flex flex-wrap gap-4">
+              <div>
+                <div class="text-muted">Bons</div>
+                <div class="display-6 fw-bold text-succes">{{ k.good }}</div>
+              </div>
+              <div>
+                <div class="text-muted">Rebuts</div>
+                <div class="display-6 fw-bold text-danger">{{ k.scrap }}</div>
+              </div>
+              <div>
+                <div class="text-muted">Qualité (TRS)</div>
+                <div class="display-6 fw-bold">{{ k.trs }}%</div>
+              </div>
+            </div>
+          </ng-container>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section class="events card">
-    <h3>Derniers événements (1h)</h3>
+    <h3>Derniers événements</h3>
     <p *ngIf="!events().length" class="muted">Aucun événement récent.</p>
     <ul class="list">
       <li *ngFor="let ev of events()">
@@ -21,7 +76,7 @@
           [class.stop]="ev.event_type==='stop'"></span>
         <span class="type">{{ ev.event_type }}</span>
         <span class="qty" *ngIf="ev.event_type!=='stop'">×{{ ev.qty }}</span>
-        <span class="at">{{ ev.happened_at | date:'short' }}</span>
+        <span class="at">{{ ev.happened_at | date:'short':tz }}</span>
         <span class="wo" *ngIf="ev.work_order_number">— OF {{ ev.work_order_number }}</span>
         <span class="notes" *ngIf="ev.notes">• {{ ev.notes }}</span>
       </li>

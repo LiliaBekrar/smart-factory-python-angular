@@ -58,7 +58,8 @@ class WorkOrderOut(BaseModel):
 # -------------------------
 class KPIOut(BaseModel):
     """Indicateurs calculés (non liés à une table SQL)."""
-    throughput_last_hour: int      # nombre de pièces bonnes produites sur la dernière heure
+    good: int
+    scrap: int      # nombre de pièces bonnes produites sur la dernière heure
     trs: float                     # Taux de Rendement Synthétique (qualité, dispo, perf)
 
 
