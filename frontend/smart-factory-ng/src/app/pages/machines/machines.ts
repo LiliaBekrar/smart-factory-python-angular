@@ -1,5 +1,6 @@
 import { Component, OnInit, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { RouterLink } from '@angular/router';
 import { ApiService } from '../../services/api';
 
 type Machine = {
@@ -13,7 +14,7 @@ type Machine = {
 @Component({
   selector: 'app-machines',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, RouterLink],
   templateUrl: './machines.html',
   styleUrls: ['./machines.scss'],
 })

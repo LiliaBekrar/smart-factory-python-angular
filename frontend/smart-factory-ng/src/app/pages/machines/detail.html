@@ -1,0 +1,33 @@
+<div class="machine-detail" *ngIf="machine() as m">
+  <header class="bar">
+    <h2>{{ m.name }}</h2>
+    <span class="badge" [class.running]="m.status==='running'" [class.stopped]="m.status==='stopped'"
+      [class.setup]="m.status==='setup'">
+      {{ m.status }}
+    </span>
+  </header>
+
+  <section class="meta card">
+    <div><strong>Code :</strong> {{ m.code }}</div>
+    <div><strong>Cadence cible :</strong> {{ m.target_rate_per_hour }} / h</div>
+  </section>
+
+  <section class="events card">
+    <h3>Derniers événements (1h)</h3>
+    <p *ngIf="!events().length" class="muted">Aucun événement récent.</p>
+    <ul class="list">
+      <li *ngFor="let ev of events()">
+        <span class="dot" [class.good]="ev.event_type==='good'" [class.scrap]="ev.event_type==='scrap'"
+          [class.stop]="ev.event_type==='stop'"></span>
+        <span class="type">{{ ev.event_type }}</span>
+        <span class="qty" *ngIf="ev.event_type!=='stop'">×{{ ev.qty }}</span>
+        <span class="at">{{ ev.happened_at | date:'short' }}</span>
+        <span class="wo" *ngIf="ev.work_order_number">— OF {{ ev.work_order_number }}</span>
+        <span class="notes" *ngIf="ev.notes">• {{ ev.notes }}</span>
+      </li>
+    </ul>
+  </section>
+</div>
+
+<p *ngIf="loading()">Chargement…</p>
+<p *ngIf="error()" class="error">{{ error() }}</p>

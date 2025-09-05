@@ -43,12 +43,14 @@
 
   <!-- nuage de bulles (une bulle = une machine) -->
   <section class="bubbles" *ngIf="filtered().length">
-    <div class="bubble" *ngFor="let m of filtered()" [class.running]="m.status==='running'"
-      [class.stopped]="m.status==='stopped'" [class.setup]="m.status==='setup'" [title]="machineTooltip(m)">
+    <a class="bubble" *ngFor="let m of filtered()" [class.running]="m.status==='running'"
+      [class.stopped]="m.status==='stopped'" [class.setup]="m.status==='setup'" [title]="machineTooltip(m)"
+      [routerLink]="['/machines', m.id]"> <!-- 👈 lien vers détail -->
       <div class="code">{{ m.code }}</div>
       <div class="name">{{ m.name }}</div>
-    </div>
+    </a>
   </section>
+
 
   <p *ngIf="machines().length && !filtered().length" class="empty">
     Aucun résultat pour ce filtre.

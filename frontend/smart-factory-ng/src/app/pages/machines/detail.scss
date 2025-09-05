@@ -1,0 +1,101 @@
+.machine-detail {
+  display: grid;
+  gap: 16px;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.badge {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid #E6EAF0;
+  text-transform: uppercase;
+  font-size: .75rem;
+  font-weight: 800;
+}
+
+.badge.running {
+  background: rgba(29, 185, 84, .08);
+  color: #0f7a3a;
+  border-color: #bfeccc;
+}
+
+.badge.stopped {
+  background: rgba(224, 49, 49, .08);
+  color: #7a0f0f;
+  border-color: #f3c0c0;
+}
+
+.badge.setup {
+  background: rgba(255, 176, 32, .12);
+  color: #8a5a00;
+  border-color: #ffdf9c;
+}
+
+.card {
+  background: #fff;
+  border: 1px solid #E6EAF0;
+  border-radius: 16px;
+  padding: 16px;
+}
+
+.events .list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.events li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.events .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #cbd5e1;
+  display: inline-block;
+}
+
+.events .dot.good {
+  background: #1DB954;
+}
+
+.events .dot.scrap {
+  background: #E03131;
+}
+
+.events .dot.stop {
+  background: #94A3B8;
+}
+
+.events .type {
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: .8rem;
+}
+
+.events .qty {
+  font-weight: 800;
+}
+
+.events .at {
+  color: #64748B;
+}
+
+.events .wo {
+  color: #475569;
+}
+
+.events .notes {
+  color: #475569;
+  font-style: italic;
+}

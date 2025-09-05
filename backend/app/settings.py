@@ -1,16 +1,27 @@
+from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field
+
+BASE_DIR = Path(__file__).resolve().parents[1]
 
 class Settings(BaseSettings):
-    DATABASE_URL: str = "sqlite:///./smart_factory.db"  # fallback pour dev
-    SECRET_KEY: str = "dev-secret"                 # valeur par défaut en dev
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60          # par défaut 60 min
+    # --- Base de données ---
+    database_url: str = Field(
+        default=f"sqlite:///{(BASE_DIR / 'smart_factory.db').as_posix()}"
+    )
 
-    # Pydantic v2: lit .env et ignore les champs non déclarés
+    # --- JWT ---
+    secret_key: str = Field(default="dev-secret")
+    access_token_expire_minutes: int = Field(default=60)
+
+    # --- Divers ---
+    seed_on_start: bool = Field(default=False)
+    debug: bool = Field(default=True)
+
     model_config = SettingsConfigDict(
         env_file=".env",
-        extra="ignore",            # <- évite l'erreur 'extra_forbidden'
+        extra="ignore",
         case_sensitive=False,
     )
 
-# instance unique
 settings = Settings()
