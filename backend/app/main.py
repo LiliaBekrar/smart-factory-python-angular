@@ -39,8 +39,8 @@ Notes d'industrialisation
 """
 
 # --- Imports standards ---
-from typing import List                 # types génériques (List[...] pour les réponses)
-from datetime import datetime, timedelta # horodatage UTC + fenêtres de temps
+from typing import List, Optional               # types génériques (List[...] pour les réponses)
+from datetime import datetime, timedelta, timezone # horodatage UTC + fenêtres de temps
 
 # --- Imports FastAPI ---
 from fastapi import FastAPI, Query, Depends, HTTPException, status, Body   # app, paramètres, DI, erreurs
@@ -205,43 +205,44 @@ def list_work_orders(db: Session = Depends(get_db)):
 
 
 # -------------------------
-# KPIs (dernière heure)
+# KPIs
 # -------------------------
 @app.get("/machines/{machine_id}/kpis", response_model=KPIOut)
-def machine_kpis(machine_id: int, db: Session = Depends(get_db)):
-    """Calcule les KPIs d'une machine sur la **dernière heure**.
+def machine_kpis(machine_id: int, minutes: Optional[int] = Query(None, ge=1, le=24*60*365), db: Session = Depends(get_db)):
+    q = db.query(
+        func.sum(case((ProductionEvent.event_type == "good", ProductionEvent.qty), else_=0)).label("good"),
+        func.sum(case((ProductionEvent.event_type == "scrap", ProductionEvent.qty), else_=0)).label("scrap"),
+    ).filter(ProductionEvent.machine_id == machine_id)
+    if minutes:
+        since = datetime.utcnow() - timedelta(minutes=minutes)
+        q = q.filter(ProductionEvent.happened_at >= since)
+    sums = q.one()
 
-    Définitions:
-    - `throughput_last_hour` = somme des pièces "good" (qty) sur 60 minutes.
-    - `trs` = % qualité = good / (good + scrap) * 100.
+    good = int(sums.good or 0)
+    scrap = int(sums.scrap or 0)
+    trs = (good / (good + scrap) * 100) if (good + scrap) > 0 else 0.0
 
-    Implémentation:
-    - Calcul côté SQL via `SUM(CASE WHEN ...)` pour meilleures perfs.
-    - Fenêtre = événements avec `happened_at >= now - 1h` (UTC).
-    """
-    one_hour_ago = datetime.utcnow() - timedelta(hours=1)  # borne basse de la fenêtre de calcul
+    return KPIOut(good=good, scrap=scrap, trs=round(trs, 1))
 
-    # Construction de la requête d'agrégation
-    sums = (
-        db.query(
-            # Somme des qty quand event_type == 'good'
-            func.sum(case((ProductionEvent.event_type == "good", ProductionEvent.qty), else_=0)).label("good_sum"),
-            # Somme des qty quand event_type == 'scrap'
-            func.sum(case((ProductionEvent.event_type == "scrap", ProductionEvent.qty), else_=0)).label("scrap_sum"),
-        )
-        .filter(
-            ProductionEvent.machine_id == machine_id,           # on cible la machine demandée
-            ProductionEvent.happened_at >= one_hour_ago,        # on limite à la dernière heure
-        )
-        .one()  # on attend une seule ligne de résultat
+# KPIs globaux (toutes machines) — minutes optionnel (si omis => global)
+@app.get("/kpis/global", response_model=KPIOut)
+def kpis_global(
+    minutes: Optional[int] = Query(None, ge=1, le=525600),
+    db: Session = Depends(get_db),
+):
+    q = db.query(
+        func.sum(case((ProductionEvent.event_type == "good", ProductionEvent.qty), else_=0)).label("good_sum"),
+        func.sum(case((ProductionEvent.event_type == "scrap", ProductionEvent.qty), else_=0)).label("scrap_sum"),
     )
+    if minutes is not None:
+        since = datetime.utcnow() - timedelta(minutes=minutes)
+        q = q.filter(ProductionEvent.happened_at >= since)
 
-    good = sums.good_sum or 0   # si None → 0
-    scrap = sums.scrap_sum or 0 # si None → 0
-    trs = (good / (good + scrap) * 100) if (good + scrap) > 0 else 0.0  # évite division par zéro
-
-    # On renvoie un objet Pydantic KPIOut (sera auto‑sérialisé en JSON)
-    return KPIOut(throughput_last_hour=int(good), trs=round(trs, 1))
+    sums = q.one()
+    good = int(sums.good_sum or 0)
+    scrap = int(sums.scrap_sum or 0)
+    trs = (good / (good + scrap) * 100) if (good + scrap) > 0 else 0.0
+    return KPIOut(good=good, scrap=scrap, trs=round(trs, 1))
 
 
 # -------------------------
@@ -249,10 +250,48 @@ def machine_kpis(machine_id: int, db: Session = Depends(get_db)):
 # -------------------------
 @app.get("/activities/recent", response_model=List[ActivityItemOut])
 def recent_activities(
-    limit: int = Query(50, ge=1, le=500),        # nombre max d'items à renvoyer (borne 1..500)
-    minutes: int = Query(120, ge=1, le=24*60),   # fenêtre temporelle (en minutes)
+    limit: int = Query(50, ge=1, le=500),
+    minutes: Optional[int] = Query(None, ge=1, le=24*60),  # ✅ optionnel
     db: Session = Depends(get_db),
 ):
+    """
+    Derniers événements (toutes machines).
+    - Si `minutes` est fourni → filtre depuis maintenant - minutes
+    - Sinon → pas de filtre temporel (juste `limit`)
+    """
+    q = (
+        db.query(ProductionEvent, Machine.code, Machine.name, WorkOrder.number)
+        .join(Machine, Machine.id == ProductionEvent.machine_id)
+        .outerjoin(WorkOrder, WorkOrder.id == ProductionEvent.work_order_id)
+    )
+
+    if minutes is not None:
+        since = datetime.utcnow() - timedelta(minutes=minutes)
+        q = q.filter(ProductionEvent.happened_at >= since)
+
+    q = q.order_by(desc(ProductionEvent.happened_at)).limit(limit)
+
+    items: List[ActivityItemOut] = []
+    for ev, machine_code, machine_name, wo_number in q.all():
+        dt = ev.happened_at
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        items.append(
+            ActivityItemOut(
+                id=ev.id,
+                machine_id=ev.machine_id,
+                machine_code=machine_code,
+                machine_name=machine_name,
+                work_order_id=ev.work_order_id,
+                work_order_number=wo_number,
+                event_type=ev.event_type,
+                qty=ev.qty,
+                notes=ev.notes,
+                happened_at=dt,
+            )
+        )
+    return items
+
     """Retourne les derniers événements (toutes machines) sur N minutes.
 
     - Joint `Machine` pour récupérer `code` (affichage plus parlant côté front).
@@ -297,13 +336,59 @@ def recent_activities(
 def machine_activity(
     machine_id: int,
     limit: int = Query(50, ge=1, le=500),
-    minutes: int = Query(120, ge=1, le=24 * 60),
+    minutes: Optional[int] = Query(None, ge=1, le=24 * 60),  # ✅ optionnel
     db: Session = Depends(get_db),
 ):
+    """Historique d'une machine. Si `minutes` est omis → pas de filtre temps."""
+    m = db.get(Machine, machine_id)
+    if not m:
+        raise HTTPException(status_code=404, detail="Machine not found")
+
+    q = (
+        db.query(ProductionEvent, WorkOrder.number)
+        .outerjoin(WorkOrder, WorkOrder.id == ProductionEvent.work_order_id)
+        .filter(ProductionEvent.machine_id == machine_id)
+    )
+
+    if minutes is not None:
+        since = datetime.utcnow() - timedelta(minutes=minutes)
+        q = q.filter(ProductionEvent.happened_at >= since)
+
+    q = q.order_by(desc(ProductionEvent.happened_at)).limit(limit)
+
+    items: List[ActivityItemOut] = []
+    for ev, wo_number in q.all():
+        dt = ev.happened_at
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        items.append(
+            ActivityItemOut(
+                id=ev.id,
+                machine_id=ev.machine_id,
+                machine_code=m.code,
+                machine_name=m.name,
+                work_order_id=ev.work_order_id,
+                work_order_number=wo_number,
+                event_type=ev.event_type,
+                qty=ev.qty,
+                notes=ev.notes,
+                happened_at=dt,
+            )
+        )
+    return items
+
     """Retourne l'historique d'une machine sur N minutes (du plus récent au plus ancien)."""
     since = datetime.utcnow() - timedelta(minutes=minutes)
 
-    # Requête: pour chaque event de la machine, on récupère éventuellement le n° d'OF
+    # Charge une fois la machine pour récupérer code + name
+    m = db.get(Machine, machine_id)  # SQLAlchemy 2.x
+    if not m:
+        raise HTTPException(status_code=404, detail="Machine not found")
+
+    machine_code = m.code
+    machine_name = m.name
+
+    # Requête: events de la machine + n° d'OF éventuel
     q = (
         db.query(ProductionEvent, WorkOrder.number)
         .outerjoin(WorkOrder, WorkOrder.id == ProductionEvent.work_order_id)
@@ -315,28 +400,28 @@ def machine_activity(
         .limit(limit)
     )
 
-    # Récupère le code machine pour enrichir la sortie (non strictement nécessaire, mais pratique)
-    # NOTE (SQLAlchemy 2.x): `db.get(Machine, machine_id)` est l'API moderne.
-    m = db.query(Machine).get(machine_id)
-    machine_code = m.code if m else None
-
     items: List[ActivityItemOut] = []
     for ev, wo_number in q.all():
+        # Normalise en UTC "aware" si ton champ est naïf (évite le décalage à l’affichage)
+        dt = ev.happened_at
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+
         items.append(
             ActivityItemOut(
                 id=ev.id,
                 machine_id=ev.machine_id,
-                machine_code=machine_code,       # on réutilise le code si trouvé
+                machine_code=machine_code,
+                machine_name=machine_name,          # ✅ maintenant présent
                 work_order_id=ev.work_order_id,
-                work_order_number=wo_number,     # peut être None
+                work_order_number=wo_number,
                 event_type=ev.event_type,
                 qty=ev.qty,
                 notes=ev.notes,
-                happened_at=ev.happened_at,
+                happened_at=dt,                     # ✅ renvoyé “aware” (UTC)
             )
         )
     return items
-
 
 # -------------------------
 # Auth: signup / login / me
@@ -505,68 +590,68 @@ def delete_machine(
 # -------------------------
 @app.get("/dashboard/summary", response_model=DashboardSummaryOut)
 def dashboard_summary(
-    limit_recent: int = Query(5, ge=1, le=50),   # nombre d'événements récents à renvoyer
-    minutes: int = Query(60, ge=5, le=24*60),    # fenêtre pour TRS/activités
+    limit_recent: int = Query(5, ge=1, le=50),
+    minutes: Optional[int] = Query(None, ge=5, le=24*60),  # ✅ optionnel
     db: Session = Depends(get_db),
 ):
-    """Résumé global pour un dashboard simple.
-
-    Contient:
-    - total machines / running / stopped
-    - TRS moyen dernière heure (approx: good/(good+scrap)*100)
-    - N dernières activités (enrichies)
+    """
+    Résumé global.
+    - Si `minutes` est fourni → calculs sur la fenêtre.
+    - Sinon → calculs sur tout l'historique (pas de filtre temps) et `recent` = N derniers événements.
     """
 
-    since = datetime.utcnow() - timedelta(minutes=minutes)  # borne basse
-
-    # 1) Compteurs machines (simples agrégations)
+    # 1) Compteurs machines (global)
     total = db.query(func.count(Machine.id)).scalar() or 0
     running = db.query(func.count(Machine.id)).filter(Machine.status == "running").scalar() or 0
     stopped = db.query(func.count(Machine.id)).filter(Machine.status == "stopped").scalar() or 0
 
-    # 2) TRS moyen (global sur la fenêtre)
-    sums = (
-        db.query(
-            func.sum(case((ProductionEvent.event_type == "good", ProductionEvent.qty), else_=0)).label("good_sum"),
-            func.sum(case((ProductionEvent.event_type == "scrap", ProductionEvent.qty), else_=0)).label("scrap_sum"),
-        )
-        .filter(ProductionEvent.happened_at >= since)
-        .one()
+    # 2) TRS (fenêtre si minutes, sinon global)
+    agg = db.query(
+        func.sum(case((ProductionEvent.event_type == "good", ProductionEvent.qty), else_=0)).label("good_sum"),
+        func.sum(case((ProductionEvent.event_type == "scrap", ProductionEvent.qty), else_=0)).label("scrap_sum"),
     )
-    good = sums.good_sum or 0
-    scrap = sums.scrap_sum or 0
+    if minutes is not None:
+        since = datetime.utcnow() - timedelta(minutes=minutes)
+        agg = agg.filter(ProductionEvent.happened_at >= since)
+    sums = agg.one()
+    good = int(sums.good_sum or 0)
+    scrap = int(sums.scrap_sum or 0)
     trs_avg_last_hour = float(round((good / (good + scrap) * 100), 1)) if (good + scrap) > 0 else 0.0
 
-    # 3) Activités récentes (jointures pour enrichir chaque event)
+    # 3) Activités récentes (fenêtre si minutes, sinon juste les N dernières)
     q = (
         db.query(ProductionEvent, Machine.code, Machine.name, WorkOrder.number)
           .join(Machine, Machine.id == ProductionEvent.machine_id)
           .outerjoin(WorkOrder, WorkOrder.id == ProductionEvent.work_order_id)
-          .filter(ProductionEvent.happened_at >= since)
-          .order_by(desc(ProductionEvent.happened_at))
-          .limit(limit_recent)
     )
+    if minutes is not None:
+        q = q.filter(ProductionEvent.happened_at >= since)
 
-    recent = [
-        DashboardActivityItemOut(
-            id=ev.id,
-            machine_code=machine_code,
-            machine_name=machine_name,
-            event_type=ev.event_type,
-            qty=ev.qty,
-            happened_at=ev.happened_at,
-            work_order_number=wo_number,
+    q = q.order_by(desc(ProductionEvent.happened_at)).limit(limit_recent)
+
+    recent = []
+    for (ev, machine_code, machine_name, wo_number) in q.all():
+        dt = ev.happened_at
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)  # ✅ normalise en UTC "aware"
+        recent.append(
+            DashboardActivityItemOut(
+                id=ev.id,
+                machine_code=machine_code,
+                machine_name=machine_name,
+                event_type=ev.event_type,
+                qty=ev.qty,
+                happened_at=dt,
+                work_order_number=wo_number,
+            )
         )
-        for (ev, machine_code, machine_name, wo_number) in q.all()
-    ]
 
-    # Assemblage de la réponse de synthèse
     return DashboardSummaryOut(
         kpis=DashboardKPIOut(
             total_machines=total,
             running=running,
             stopped=stopped,
-            trs_avg_last_hour=trs_avg_last_hour,
+            trs_avg_last_hour=trs_avg_last_hour,  # = sur la fenêtre ou global si minutes omis
         ),
         recent=recent,
     )
