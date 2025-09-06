@@ -36,7 +36,26 @@ class MachineOut(BaseModel):
     code: str                      # code unique machine
     status: str                    # état actuel (ex: running, stopped)
     target_rate_per_hour: int      # cadence cible par heure
+    created_by: int | None = None
 
+# -------------------------
+# Machines (CRUD)
+# -------------------------
+class MachineCreate(BaseModel):
+    """Payload d’entrée pour créer une machine."""
+    name: str
+    code: str
+    status: str = "setup"          # valeur par défaut = machine non démarrée
+    target_rate_per_hour: int = 0  # valeur par défaut = 0
+
+
+class MachineUpdate(BaseModel):
+    """Payload d’entrée pour mettre à jour une machine (PATCH partiel)."""
+    # Tous les champs sont optionnels pour permettre un update partiel
+    name: str | None = None
+    code: str | None = None
+    status: str | None = None
+    target_rate_per_hour: int | None = None
 
 # -------------------------
 # WorkOrder
@@ -120,24 +139,6 @@ class UserUpdate(BaseModel):
     email: EmailStr | None = None
     password: str | None = None
     role: str | None = None
-# -------------------------
-# Machines (CRUD)
-# -------------------------
-class MachineCreate(BaseModel):
-    """Payload d’entrée pour créer une machine."""
-    name: str
-    code: str
-    status: str = "setup"          # valeur par défaut = machine non démarrée
-    target_rate_per_hour: int = 0  # valeur par défaut = 0
-
-
-class MachineUpdate(BaseModel):
-    """Payload d’entrée pour mettre à jour une machine (PATCH partiel)."""
-    # Tous les champs sont optionnels pour permettre un update partiel
-    name: str | None = None
-    code: str | None = None
-    status: str | None = None
-    target_rate_per_hour: int | None = None
 
 
 # -------------------------

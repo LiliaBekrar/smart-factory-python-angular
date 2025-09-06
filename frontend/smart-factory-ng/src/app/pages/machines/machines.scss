@@ -198,3 +198,108 @@
   text-align: center;
   padding: 18px;
 }
+
+/* --- Création: carte formulaire --- */
+.form-card {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px 16px;
+  background: var(--sf-card);
+  border: 1px solid var(--sf-border);
+  border-radius: var(--sf-radius);
+  box-shadow: var(--sf-shadow);
+  padding: 16px;
+}
+
+.control {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.control label {
+  font-weight: 700;
+  color: var(--sf-text);
+}
+
+.control input,
+.control select {
+  border: 1px solid var(--sf-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #fff;
+  font: inherit;
+}
+
+.control .hint {
+  color: var(--sf-muted);
+  font-size: .875rem;
+}
+
+.input-with-suffix {
+  position: relative;
+}
+
+.input-with-suffix input {
+  padding-right: 56px;
+}
+
+.input-with-suffix .suffix {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  border-left: 1px solid var(--sf-border);
+  padding-left: 10px;
+  font-weight: 700;
+  color: var(--sf-muted);
+}
+
+/* preview de la bulle en live */
+.preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.form-card .actions-row {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.form-card .actions-row button {
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--sf-border);
+  background: #fff;
+  font-weight: 700;
+}
+
+.form-card .actions-row button:hover {
+  border-color: var(--sf-green);
+  color: #0f7a3a;
+}
+
+/* --- Toggle d'affichage (bulles / table) --- */
+.view-toggle {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 6px;
+}
+
+.view-toggle button {
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--sf-border);
+  background: #fff;
+  font-weight: 700;
+  color: var(--sf-text);
+}
+
+.view-toggle button.active,
+.view-toggle button:hover {
+  border-color: var(--sf-green);
+  color: #0f7a3a;
+  background: rgba(29, 185, 84, .08);
+}

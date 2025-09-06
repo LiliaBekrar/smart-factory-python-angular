@@ -1,3 +1,4 @@
+<!-- src/app/pages/machines/machines.html -->
 <div class="machines-page">
   <header class="bar">
     <h2>Parc Machines</h2>
@@ -9,6 +10,65 @@
   <p *ngIf="loading()">Chargement…</p>
   <p *ngIf="error()" class="error">{{ error() }}</p>
 
+  <!-- Création (visible si connecté) -->
+  <section class="create" *ngIf="auth.isLoggedIn()">
+    <h3>Ajouter une machine</h3>
+
+    <form (ngSubmit)="create()" class="form-card" novalidate>
+      <!-- Nom -->
+      <div class="control">
+        <label for="m-name">Nom de la machine</label>
+        <input id="m-name" type="text" name="name" placeholder="ex : Fraiseuse Mazak" [ngModel]="newMachine().name"
+          (ngModelChange)="updateNew('name', $event)" required />
+        <small class="hint">Nom lisible par les opérateurs.</small>
+      </div>
+
+      <!-- Code -->
+      <div class="control">
+        <label for="m-code">Code</label>
+        <input id="m-code" type="text" name="code" placeholder="ex : CNC-01" [ngModel]="newMachine().code"
+          (ngModelChange)="updateNew('code', $event)" required />
+        <small class="hint">Identifiant court (atelier/étiquette).</small>
+      </div>
+
+      <!-- Statut -->
+      <div class="control">
+        <label for="m-status">Statut</label>
+        <select id="m-status" name="status" [ngModel]="newMachine().status"
+          (ngModelChange)="updateNew('status', $event)">
+          <option value="setup">Réglage</option>
+          <option value="running">En marche</option>
+          <option value="stopped">À l’arrêt</option>
+        </select>
+        <small class="hint">État initial visible sur le dashboard.</small>
+      </div>
+
+      <!-- Cadence -->
+      <div class="control">
+        <label for="m-trph">Cadence cible (par heure)</label>
+        <div class="input-with-suffix">
+          <input id="m-trph" type="number" inputmode="numeric" min="0" step="1" name="trph" placeholder="ex : 40"
+            [ngModel]="newMachine().target_rate_per_hour" (ngModelChange)="updateNew('target_rate_per_hour', $event)" />
+          <span class="suffix">pcs/h</span>
+        </div>
+        <small class="hint">Utilisé pour le TRS/objectif.</small>
+      </div>
+
+      <!-- Preview -->
+      <div class="preview">
+        <div class="bubble" [class.running]="newMachine().status==='running'"
+          [class.stopped]="newMachine().status==='stopped'" [class.setup]="newMachine().status==='setup'">
+          <div class="code">{{ newMachine().code || 'CODE' }}</div>
+          <div class="name">{{ newMachine().name || 'Nom de la machine' }}</div>
+        </div>
+      </div>
+
+      <div class="actions-row">
+        <button type="submit" [disabled]="loading()">Créer</button>
+      </div>
+    </form>
+  </section>
+
   <!-- résumé en 3 gros cercles -->
   <section class="summary" *ngIf="machines().length">
     <div class="stat">
@@ -17,14 +77,12 @@
       </div>
       <div class="label">En marche</div>
     </div>
-
     <div class="stat">
       <div class="big-dot stopped">
         <div class="value">{{ stopped().length }}</div>
       </div>
       <div class="label">À l’arrêt</div>
     </div>
-
     <div class="stat">
       <div class="big-dot setup">
         <div class="value">{{ setup().length }}</div>
@@ -39,18 +97,72 @@
     <button [class.active]="filter()==='running'" (click)="setFilter('running')">En marche</button>
     <button [class.active]="filter()==='stopped'" (click)="setFilter('stopped')">À l’arrêt</button>
     <button [class.active]="filter()==='setup'" (click)="setFilter('setup')">Réglage</button>
+
+    <!-- Toggle d'affichage -->
+    <div class="view-toggle">
+      <button type="button" [class.active]="view==='bubbles'" (click)="view='bubbles'">Bulles</button>
+      <button type="button" [class.active]="view==='table'" (click)="view='table'">Table</button>
+    </div>
   </nav>
 
-  <!-- nuage de bulles (une bulle = une machine) -->
-  <section class="bubbles" *ngIf="filtered().length">
+  <!-- nuage de bulles -->
+  <section class="bubbles" *ngIf="filtered().length && view==='bubbles'">
     <a class="bubble" *ngFor="let m of filtered()" [class.running]="m.status==='running'"
-      [class.stopped]="m.status==='stopped'" [class.setup]="m.status==='setup'" [title]="machineTooltip(m)"
-      [routerLink]="['/machines', m.id]"> <!-- 👈 lien vers détail -->
+      [class.stopped]="m.status==='stopped'" [class.setup]="m.status==='setup'"
+      [title]="machineTooltip(m)" [routerLink]="['/machines', m.id]">
       <div class="code">{{ m.code }}</div>
       <div class="name">{{ m.name }}</div>
     </a>
   </section>
 
+  <!-- liste table -->
+  <section class="list" *ngIf="filtered().length && view==='table'">
+    <table>
+      <thead>
+        <tr>
+          <th>Code</th>
+          <th>Nom</th>
+          <th>Statut</th>
+          <th>Cadence/h</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let m of filtered()">
+          <ng-container *ngIf="editId() !== m.id; else editing">
+            <td>{{ m.code }}</td>
+            <td><a [routerLink]="['/machines', m.id]">{{ m.name }}</a></td>
+            <td>{{ m.status }}</td>
+            <td>{{ m.target_rate_per_hour }}</td>
+            <td class="actions">
+              <button *ngIf="canEdit(m)" (click)="startEdit(m)">Éditer</button>
+              <button *ngIf="canEdit(m)" (click)="remove(m.id)">Supprimer</button>
+            </td>
+          </ng-container>
+          <ng-template #editing>
+            <td><input [ngModel]="editForm().code" (ngModelChange)="updateEdit('code', $event)" name="code-{{m.id}}" />
+            </td>
+            <td><input [ngModel]="editForm().name" (ngModelChange)="updateEdit('name', $event)" name="name-{{m.id}}" />
+            </td>
+            <td>
+              <select [ngModel]="editForm().status" (ngModelChange)="updateEdit('status', $event)"
+                name="status-{{m.id}}">
+                <option value="setup">Réglage</option>
+                <option value="running">En marche</option>
+                <option value="stopped">À l’arrêt</option>
+              </select>
+            </td>
+            <td><input type="number" [ngModel]="editForm().target_rate_per_hour"
+                (ngModelChange)="updateEdit('target_rate_per_hour', $event)" name="trph-{{m.id}}" /></td>
+            <td class="actions">
+              <button (click)="saveEdit(m.id)">Enregistrer</button>
+              <button (click)="cancelEdit()">Annuler</button>
+            </td>
+          </ng-template>
+        </tr>
+      </tbody>
+    </table>
+  </section>
 
   <p *ngIf="machines().length && !filtered().length" class="empty">
     Aucun résultat pour ce filtre.
