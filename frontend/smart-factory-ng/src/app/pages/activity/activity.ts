@@ -24,7 +24,7 @@ export class ActivityComponent implements OnInit {
 
   // 0 = toutes les machines
   selectedMachineId = signal<number | 0>(0);
-  selectedPeriod    = signal<PeriodKey>('1h');
+  selectedPeriod    = signal<PeriodKey>('1y');
 
   // Affichage en Europe/Paris pour éviter le décalage
   readonly tz = 'Europe/Paris';
