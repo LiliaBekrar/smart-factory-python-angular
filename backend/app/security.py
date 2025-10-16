@@ -13,7 +13,6 @@ import os
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 
-
 # ==========================================================
 # 🔐 PARAMÈTRES GLOBAUX : JWT + CONFIG ENVIRONNEMENT
 # ==========================================================
