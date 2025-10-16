@@ -17,6 +17,11 @@ from .db import SessionLocal
 from .models import Machine, WorkOrder, ProductionEvent, User
 from .security import hash_password
 
+from .security import pwd_context
+import app.security as sec
+print("🔒 [seed] Passlib schemes =", pwd_context.schemes())
+print("📦 [seed] security module file =", sec.__file__)
+
 
 def seed():
     """
