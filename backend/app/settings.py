@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     # 🌱 Drapeaux d'environnement
     # -------------------------------------------------
     seed_on_start: bool = Field(
-        default=False,
+        default=True,
         description="Si vrai → exécute app.seed au démarrage (Render Free)",
     )
     debug: bool = Field(default=True)
