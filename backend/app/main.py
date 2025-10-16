@@ -19,9 +19,10 @@ from fastapi.routing import APIRoute
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.responses import RedirectResponse
 
-
 from sqlalchemy.orm import Session
 from sqlalchemy import func, case, desc
+
+from app.settings import settings
 
 # 🔌 Accès DB (sync)
 from app.db import SessionLocal
@@ -71,25 +72,32 @@ app.add_middleware(
 # au démarrage si tu ne peux pas utiliser Pre/Post-Deploy hooks.
 @app.on_event("startup")
 def on_startup():
-    # 1) Appliquer les migrations Alembic
+    from app.settings import settings  # important : charger la config ici
+
+    # 🔍 Log pour vérifier les variables d'environnement réellement lues
+    print("🧩 ENV SETTINGS LOADED →")
+    print(f"  DATABASE_URL     = {settings.database_url}")
+    print(f"  SEED_ON_START    = {settings.seed_on_start}")
+    print(f"  DEBUG             = {settings.debug}")
+    print(f"  SECRET_KEY (len)  = {len(settings.secret_key)} chars")
+
+    # 1️⃣ Appliquer les migrations Alembic
     try:
-        # Exécute : alembic upgrade head
         subprocess.run(["alembic", "upgrade", "head"], check=True)
         print("✅ Alembic migrations applied.")
     except Exception as e:
-        # N'empêche pas l'app de démarrer (mais log l'erreur)
         print(f"⚠️ Alembic migration failed: {e}")
 
-    # 2) (Optionnel) Lancer les seeds si SEED_ON_START=true
-    #    -> variable d'env lue via app.settings.settings
+    # 2️⃣ (Optionnel) Lancer les seeds si SEED_ON_START=true
+    #    → variable d'env lue via app.settings.settings
     if getattr(settings, "seed_on_start", False):
         try:
             print("🌱 Seeding initial data...")
-            # On lance un module Python : app/seed_data.py (doit exister)
             subprocess.run(["python", "-m", "app.seed"], check=True)
             print("✅ Seed completed.")
         except Exception as e:
             print(f"⚠️ Seed failed: {e}")
+
 
 
 # -------------------------------------------------
