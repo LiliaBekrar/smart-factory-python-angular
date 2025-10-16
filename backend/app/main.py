@@ -515,3 +515,17 @@ def list_routes():
         if isinstance(r, APIRoute):
             out.append({"path": r.path, "methods": list(r.methods)})
     return out
+
+
+# -------------------------------------------------
+# 🔁 Redirections automatiques
+# -------------------------------------------------
+@app.get("/", include_in_schema=False)
+def redirect_root():
+    """Quand on visite la racine, on redirige vers /docs."""
+    return RedirectResponse(url="/docs")
+
+@app.get("/doc", include_in_schema=False)
+def redirect_doc():
+    """Redirige /doc (sans s) vers /docs."""
+    return RedirectResponse(url="/docs")
