@@ -72,6 +72,21 @@ app.add_middleware(
 # au démarrage si tu ne peux pas utiliser Pre/Post-Deploy hooks.
 @app.on_event("startup")
 def on_startup():
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+    from pathlib import Path
+    
+    def print_alembic_heads():
+        # Chemin vers ton alembic.ini dans le dossier backend/
+        cfg_path = Path(__file__).resolve().parents[1] / "alembic.ini"
+        cfg = Config(str(cfg_path))
+        script = ScriptDirectory.from_config(cfg)
+        heads = list(script.get_heads())
+        print(f"🔎 Alembic heads ({len(heads)}): {heads}")
+    
+    # Appelle-la dans on_startup()
+    print_alembic_heads()
+
     migrated_ok = False
     # 1) Migrations
     try:
