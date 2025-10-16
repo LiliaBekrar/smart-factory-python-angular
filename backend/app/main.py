@@ -72,37 +72,23 @@ app.add_middleware(
 # au démarrage si tu ne peux pas utiliser Pre/Post-Deploy hooks.
 @app.on_event("startup")
 def on_startup():
-    from app.settings import settings  # important : charger la config ici
-    from app.security import pwd_context as _pwd
-    import app.security as _sec
-    print("🔒 [startup] Passlib schemes =", _pwd.schemes())
-    print("📦 [startup] security module file =", _sec.__file__)
-
-
-    # 🔍 Log pour vérifier les variables d'environnement réellement lues
-    print("🧩 ENV SETTINGS LOADED →")
-    print(f"  DATABASE_URL     = {settings.database_url}")
-    print(f"  SEED_ON_START    = {settings.seed_on_start}")
-    print(f"  DEBUG             = {settings.debug}")
-    print(f"  SECRET_KEY (len)  = {len(settings.secret_key)} chars")
-
-    # 1️⃣ Appliquer les migrations Alembic
+    migrated_ok = False
+    # 1) Migrations
     try:
         subprocess.run(["alembic", "upgrade", "head"], check=True)
         print("✅ Alembic migrations applied.")
+        migrated_ok = True
     except Exception as e:
         print(f"⚠️ Alembic migration failed: {e}")
 
-    # 2️⃣ (Optionnel) Lancer les seeds si SEED_ON_START=true
-    #    → variable d'env lue via app.settings.settings
-    if getattr(settings, "seed_on_start", False):
+    # 2) Seed seulement si migrations OK
+    if migrated_ok and getattr(settings, "seed_on_start", False):
         try:
             print("🌱 Seeding initial data...")
             subprocess.run(["python", "-m", "app.seed"], check=True)
             print("✅ Seed completed.")
         except Exception as e:
             print(f"⚠️ Seed failed: {e}")
-
 
 
 # -------------------------------------------------
