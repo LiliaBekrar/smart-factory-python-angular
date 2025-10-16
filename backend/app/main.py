@@ -73,6 +73,11 @@ app.add_middleware(
 @app.on_event("startup")
 def on_startup():
     from app.settings import settings  # important : charger la config ici
+    from app.security import pwd_context as _pwd
+    import app.security as _sec
+    print("🔒 [startup] Passlib schemes =", _pwd.schemes())
+    print("📦 [startup] security module file =", _sec.__file__)
+
 
     # 🔍 Log pour vérifier les variables d'environnement réellement lues
     print("🧩 ENV SETTINGS LOADED →")
