@@ -31,5 +31,6 @@ python-jose==3.5.0
 pydantic[email]
 python-multipart
 pydantic-settings
-bcrypt>=4.0.1
-passlib[bcrypt]
+passlib==1.7.4
+python-jose[cryptography]
+
