@@ -9,6 +9,8 @@
 
 from datetime import datetime, timedelta, date
 import pytz
+from zoneinfo import ZoneInfo
+from datetime import timezone
 
 import random
 import traceback
@@ -19,7 +21,7 @@ from .db import SessionLocal
 from .models import Machine, WorkOrder, ProductionEvent, User
 from .security import hash_password
 
-paris_tz = pytz.timezone("Europe/Paris")
+paris_tz = ZoneInfo("Europe/Paris")
 now_paris = datetime.now(paris_tz)
 
 
