@@ -6,12 +6,13 @@ Ce module :
 - instancie l'app FastAPI et active CORS,
 - applique les migrations Alembic au démarrage (pratique sur Render Free),
 - peut lancer les seeds au démarrage si SEED_ON_START=true,
-- expose l'ensemble de tes routes (auth, machines, kpis, events, dashboard...).
+- backfill d'un mois + 24h récentes,
+- démarre un simulateur qui ajoute 1–3 événements par minute,
+- expose l'ensemble des routes (auth, machines, kpis, events, dashboard...).
 """
 
 from typing import List
 from datetime import datetime, timedelta, timezone
-import subprocess
 
 from fastapi import FastAPI, Query, Depends, HTTPException, status, Body
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,7 +23,9 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func, case, desc
 
+# ⚙️ Settings & simulateur
 from app.settings import settings
+from app.simulate import backfill_month_and_day, simulation_minutely_loop
 
 # 🔌 Accès DB (sync)
 from app.db import SessionLocal
@@ -30,24 +33,18 @@ from app.db import SessionLocal
 from app.models import Machine, WorkOrder, ProductionEvent, User
 # 📨 Schémas Pydantic (entrées / sorties)
 from app.schemas import (
-    MachineOut, WorkOrderOut, KPIOut,
-    ActivityItemOut, UserOut, SignupIn, LoginIn, TokenOut,
+    MachineOut, KPIOut, ActivityItemOut, UserOut, SignupIn, TokenOut,
     MachineCreate, MachineUpdate,
     DashboardSummaryOut, DashboardKPIOut, DashboardActivityItemOut,
     EventCreate, EventOut,
 )
 # 🔐 Sécurité (hash, vérif, JWT)
 from app.security import hash_password, verify_password, create_access_token, decode_token
-# ⚙️ Settings (pour lire SEED_ON_START, etc.)
-from app.settings import settings
 
 
 # -------------------------------------------------
 # ⚙️ App & middlewares
 # -------------------------------------------------
-# - docs_url: chemin vers Swagger UI
-# - redoc_url: doc ReDoc (tu la conserves comme dans ta version)
-# - openapi_url: endpoint du JSON OpenAPI
 app = FastAPI(
     title="Smart Factory API",
     docs_url="/docs",
@@ -55,7 +52,7 @@ app = FastAPI(
     openapi_url="/openapi.json",
 )
 
-# CORS large (pour démo). En prod, remplace "*" par l'URL exacte de ton front.
+# CORS large pour démo. En prod: passe l’URL exacte du front.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -66,22 +63,21 @@ app.add_middleware(
 
 
 # -------------------------------------------------
-# 🚀 Démarrage : migrations + (optionnel) seeds
+# 🚀 Démarrage : migrations + seeds + simulateur
 # -------------------------------------------------
-# Sur Render Free, on applique les migrations au boot.
 @app.on_event("startup")
 def on_startup():
     import subprocess
+    import asyncio
     from pathlib import Path
     from alembic.config import Config
     from alembic.script import ScriptDirectory
 
     # 0) Localise l'alembic.ini (racine = backend/)
-    #    -> main.py est dans backend/app/, on remonte d’un niveau.
     backend_dir = Path(__file__).resolve().parents[1]
     alembic_ini = backend_dir / "alembic.ini"
 
-    def log_alembic_heads() -> list[str]:
+    def log_alembic_heads() -> List[str]:
         """Retourne et log la liste des heads Alembic trouvés côté code."""
         cfg = Config(str(alembic_ini))
         script = ScriptDirectory.from_config(cfg)
@@ -95,14 +91,12 @@ def on_startup():
     if len(heads) > 1:
         print("❌ Plusieurs heads détectés. Corrige d'abord les migrations (merge).")
         print("   ➜ Ajoute une migration de merge avec down_revision = (head1, head2, ...)")
-        # On sort proprement du startup sans planter l'app, mais SANS seed.
         return
 
     migrated_ok = False
 
     # 1) Migrations Alembic (en forçant le bon ini avec -c)
     try:
-        # Important: passer explicitement -c <alembic.ini> pour éviter tout cwd foireux.
         cmd = ["alembic", "-c", str(alembic_ini), "upgrade", "head"]
         print(f"▶️  Running: {' '.join(cmd)}")
         subprocess.run(cmd, check=True)
@@ -111,26 +105,43 @@ def on_startup():
     except Exception as e:
         print(f"⚠️ Alembic migration failed: {e}")
 
-    # 2) Seed seulement si migrations OK + flag activé
+    # 2) Seeds (optionnel)
     if migrated_ok and getattr(settings, "seed_on_start", False):
         try:
             print("🌱 Seeding initial data...")
-            # Lance le module seed avec le PYTHONPATH déjà correct (package app/*)
             subprocess.run(["python", "-m", "app.seed"], check=True)
             print("✅ Seed completed.")
         except Exception as e:
             print(f"⚠️ Seed failed: {e}")
 
+    # 3) Backfill historique (30j + 24h) — idempotent
+    if migrated_ok:
+        try:
+            n30, n24 = backfill_month_and_day()
+            print(f"🧪 Backfill → ajoutés: 30j={n30}, 24h={n24}")
+        except Exception as e:
+            print(f"⚠️ Backfill error: {e}")
+
+    # 4) Simulation continue (toutes les X secondes)
+    if migrated_ok and getattr(settings, "simulate_enabled", True):
+        try:
+            asyncio.create_task(
+                simulation_minutely_loop(
+                    min_per_tick=getattr(settings, "simulate_min_per_tick", 1),
+                    max_per_tick=getattr(settings, "simulate_max_per_tick", 3),
+                    interval_seconds=getattr(settings, "simulate_interval_seconds", 60),
+                )
+            )
+            print("▶️ Simulation continue démarrée (boucle minute).")
+        except Exception as e:
+            print(f"⚠️ Simulation loop error: {e}")
 
 
 # -------------------------------------------------
 # 🗃️ DB session (dépendance FastAPI)
 # -------------------------------------------------
 def get_db():
-    """
-    Ouvre une session SQLAlchemy pour la requête puis la ferme.
-    À utiliser comme Depends dans les routes.
-    """
+    """Ouvre une session SQLAlchemy pour la requête puis la ferme."""
     db = SessionLocal()
     try:
         yield db
@@ -144,23 +155,17 @@ def get_db():
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
-    """
-    Décode le JWT, récupère l'utilisateur en BDD.
-    Lève 401 si token invalide ou user introuvable.
-    """
+    """Décode le JWT, récupère l'utilisateur en BDD. 401 si invalide."""
     payload = decode_token(token)
     if not payload or "sub" not in payload:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
-    user = db.query(User).filter(User.id == int(payload["sub"])).first()
+    user = db.get(User, int(payload["sub"]))
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
     return user
 
 def require_role(*roles: str):
-    """
-    Dépendance qui impose que l'utilisateur courant ait l'un des rôles donnés.
-    Ex: @Depends(require_role("operator","admin"))
-    """
+    """Dépendance qui impose que l'utilisateur ait l'un des rôles donnés."""
     def _dep(user: User = Depends(get_current_user)):
         if user.role not in roles:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
@@ -173,7 +178,6 @@ def require_role(*roles: str):
 # -------------------------------------------------
 @app.get("/health")
 def health():
-    """Endpoint simple pour vérifier que l'API répond."""
     return {"status": "ok"}
 
 
@@ -182,13 +186,11 @@ def health():
 # -------------------------------------------------
 @app.get("/machines", response_model=List[MachineOut])
 def list_machines(db: Session = Depends(get_db)):
-    """Liste toutes les machines."""
     return db.query(Machine).all()
 
 @app.get("/machines/{machine_id}", response_model=MachineOut)
 def get_machine(machine_id: int, db: Session = Depends(get_db)):
-    """Détail d'une machine par id."""
-    m = db.query(Machine).get(machine_id)
+    m = db.get(Machine, machine_id)
     if not m:
         raise HTTPException(status_code=404, detail="Machine not found")
     return m
@@ -203,10 +205,7 @@ def machine_kpis(
     minutes: int = Query(60, ge=1, le=24*60),
     db: Session = Depends(get_db),
 ):
-    """
-    KPIs qualité/perf pour une machine sur `minutes` (défaut 60).
-    Renvoie: { good, scrap, trs }.
-    """
+    """KPIs qualité/perf pour une machine sur `minutes` (défaut 60)."""
     since = datetime.utcnow() - timedelta(minutes=minutes)
     sums = (
         db.query(
@@ -226,10 +225,7 @@ def kpis_global(
     minutes: int = Query(60, ge=1, le=24*60),
     db: Session = Depends(get_db),
 ):
-    """
-    KPIs globaux toutes machines sur `minutes` (défaut 60).
-    Renvoie: { good, scrap, trs }.
-    """
+    """KPIs globaux toutes machines sur `minutes` (défaut 60)."""
     since = datetime.utcnow() - timedelta(minutes=minutes)
     sums = (
         db.query(
@@ -255,7 +251,7 @@ def recent_activities(
     db: Session = Depends(get_db),
 ):
     """
-    Si `minutes` est absent → renvoie simplement les `limit` derniers événements (toutes périodes).
+    Si `minutes` est absent → renvoie simplement les `limit` derniers événements.
     """
     q = (
         db.query(ProductionEvent, Machine.code, Machine.name, WorkOrder.number)
@@ -318,7 +314,6 @@ def machine_activity(
 # -------------------------------------------------
 @app.post("/auth/signup", response_model=UserOut)
 def signup(body: SignupIn, db: Session = Depends(get_db)):
-    """Inscription d'un nouvel utilisateur (rôle par défaut: operator)."""
     if db.query(User).filter(User.email == body.email).first():
         raise HTTPException(status_code=400, detail="Email already exists")
     user = User(email=body.email, hashed_password=hash_password(body.password), role="operator")
@@ -327,7 +322,6 @@ def signup(body: SignupIn, db: Session = Depends(get_db)):
 
 @app.post("/auth/login", response_model=TokenOut)
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    """Login via OAuth2 password (username=email). Renvoie un JWT."""
     user = db.query(User).filter(User.email == form_data.username).first()
     if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Bad credentials")
@@ -336,7 +330,6 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
 
 @app.get("/auth/me", response_model=UserOut)
 def me(user: User = Depends(get_current_user)):
-    """Renvoie le profil de l'utilisateur courant."""
     return user
 
 
@@ -360,7 +353,6 @@ def create_machine(
     db: Session = Depends(get_db),
     user: User = Depends(require_role("operator", "chef", "admin")),
 ):
-    """Créer une machine (code unique)."""
     if db.query(Machine).filter(Machine.code == body.code).first():
         raise HTTPException(status_code=400, detail="Machine code already exists")
     m = Machine(**body.model_dump(), created_by=user.id)
@@ -374,8 +366,7 @@ def update_machine(
     db: Session = Depends(get_db),
     user: User = Depends(require_role("operator", "chef", "admin")),
 ):
-    """Met à jour une machine si l'utilisateur y est autorisé."""
-    m = db.query(Machine).get(machine_id)
+    m = db.get(Machine, machine_id)
     if not m:
         raise HTTPException(status_code=404, detail="Machine not found")
 
@@ -399,8 +390,7 @@ def delete_machine(
     db: Session = Depends(get_db),
     user: User = Depends(require_role("operator", "chef", "admin")),
 ):
-    """Supprime une machine si autorisé."""
-    m = db.query(Machine).get(machine_id)
+    m = db.get(Machine, machine_id)
     if not m:
         raise HTTPException(status_code=404, detail="Machine not found")
 
@@ -419,10 +409,7 @@ def dashboard_summary(
     minutes: int = Query(60, ge=5, le=24*60),
     db: Session = Depends(get_db),
 ):
-    """
-    Renvoie un résumé global (nb machines, états, TRS moyen sur la fenêtre,
-    et derniers événements).
-    """
+    """Résumé global (nb machines, états, TRS moyen, derniers événements)."""
     since = datetime.utcnow() - timedelta(minutes=minutes)
 
     total = db.query(func.count(Machine.id)).scalar() or 0
@@ -475,18 +462,17 @@ def create_event(
     db: Session = Depends(get_db),
     user: User = Depends(require_role("operator", "chef", "admin")),
 ):
-    """Créer un événement de production (good/scrap/stop)."""
     if payload.event_type not in {"good", "scrap", "stop"}:
         raise HTTPException(status_code=400, detail="event_type must be one of: good|scrap|stop")
     if payload.qty < 0:
         raise HTTPException(status_code=400, detail="qty must be >= 0")
 
-    m = db.query(Machine).get(payload.machine_id)
+    m = db.get(Machine, payload.machine_id)
     if not m:
         raise HTTPException(status_code=404, detail="Machine not found")
 
     if payload.work_order_id is not None:
-        wo = db.query(WorkOrder).get(payload.work_order_id)
+        wo = db.get(WorkOrder, payload.work_order_id)
         if not wo:
             raise HTTPException(status_code=404, detail="Work order not found")
 
@@ -507,8 +493,7 @@ def get_event(
     db: Session = Depends(get_db),
     user: User = Depends(require_role("operator", "chef", "admin")),
 ):
-    """Détail d'un événement par id."""
-    ev = db.query(ProductionEvent).get(event_id)
+    ev = db.get(ProductionEvent, event_id)
     if not ev:
         raise HTTPException(status_code=404, detail="Event not found")
     return ev
@@ -524,7 +509,6 @@ def list_events(
     db: Session = Depends(get_db),
     user: User = Depends(require_role("operator", "chef", "admin")),
 ):
-    """Liste paginée/filtrée des événements."""
     q = db.query(ProductionEvent)
     if machine_id is not None:
         q = q.filter(ProductionEvent.machine_id == machine_id)
@@ -542,7 +526,6 @@ def list_events(
 # -------------------------------------------------
 @app.get("/routes")
 def list_routes():
-    """Liste toutes les routes exposées (utile en debug)."""
     out = []
     for r in app.routes:
         if isinstance(r, APIRoute):
