@@ -33,4 +33,6 @@ python-multipart
 pydantic-settings
 passlib==1.7.4
 python-jose[cryptography]
+pytz==2024.1
+tzdata>=2024.1
 
