@@ -52,6 +52,5 @@ def downgrade():
     # suppression inverse (rollback)
     op.drop_column("work_orders", "created_at")
     op.drop_column("machines", "created_at")
-    op.drop_column("users", "created_at")
 
     print("⏪ Colonnes created_at supprimées.")
