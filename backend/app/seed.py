@@ -8,6 +8,8 @@
 # ============================================================
 
 from datetime import datetime, timedelta, date
+import pytz
+
 import random
 import traceback
 from sqlalchemy.orm import Session
@@ -17,10 +19,9 @@ from .db import SessionLocal
 from .models import Machine, WorkOrder, ProductionEvent, User
 from .security import hash_password
 
-from .security import pwd_context
-import app.security as sec
-print("🔒 [seed] Passlib schemes =", pwd_context.schemes())
-print("📦 [seed] security module file =", sec.__file__)
+paris_tz = pytz.timezone("Europe/Paris")
+now_paris = datetime.now(paris_tz)
+
 
 
 def seed():
@@ -50,9 +51,9 @@ def seed():
         # 👥 1) Utilisateurs (idempotent)
         # ------------------------------------------------------------
         users_payload = [
-            {"email": "admin@test.fr", "hashed_password": hash_password("pass1234"), "role": "admin", "created_at": datetime.utcnow()},
-            {"email": "chef@test.fr",  "hashed_password": hash_password("pass1234"), "role": "chef", "created_at": datetime.utcnow()},
-            {"email": "op@test.fr",    "hashed_password": hash_password("pass1234"), "role": "operator", "created_at": datetime.utcnow()},
+            {"email": "admin@test.fr", "hashed_password": hash_password("pass1234"), "role": "admin", "created_at": now_paris},
+            {"email": "chef@test.fr",  "hashed_password": hash_password("pass1234"), "role": "chef", "created_at": now_paris},
+            {"email": "op@test.fr",    "hashed_password": hash_password("pass1234"), "role": "operator", "created_at": now_paris},
         ]
 
         created_users = 0
@@ -105,7 +106,7 @@ def seed():
         if db.scalar(select(func.count()).select_from(ProductionEvent)) == 0:
             machines = db.query(Machine).all()
             work_orders = db.query(WorkOrder).all()
-            now = datetime.utcnow()
+            now = now_paris
             events: list[ProductionEvent] = []
 
             rng = random.Random(42)
