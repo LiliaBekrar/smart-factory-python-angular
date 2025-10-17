@@ -129,7 +129,7 @@ export class ApiService {
    * - `minutes` est optionnel (si omis: valeur par défaut backend)
    * - `limit_recent` = nombre d'items récents (défaut 5)
    */
-  getDashboardSummary(minutes?: number, limit_recent: number = 5): Observable<any> {
+  getDashboardSummary(minutes?: number, limit_recent: number = 50): Observable<any> {
     const params = this.params({ minutes, limit_recent });
     return this.http.get(this.base('/dashboard/summary'), { params });
   }
