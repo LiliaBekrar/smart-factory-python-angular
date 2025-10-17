@@ -50,9 +50,9 @@ def seed():
         # 👥 1) Utilisateurs (idempotent)
         # ------------------------------------------------------------
         users_payload = [
-            {"email": "admin@test.fr", "hashed_password": hash_password("pass1234"), "role": "admin"},
-            {"email": "chef@test.fr",  "hashed_password": hash_password("pass1234"), "role": "chef"},
-            {"email": "op@test.fr",    "hashed_password": hash_password("pass1234"), "role": "operator"},
+            {"email": "admin@test.fr", "hashed_password": hash_password("pass1234"), "role": "admin", "created_at": datetime.utcnow()},
+            {"email": "chef@test.fr",  "hashed_password": hash_password("pass1234"), "role": "chef", "created_at": datetime.utcnow()},
+            {"email": "op@test.fr",    "hashed_password": hash_password("pass1234"), "role": "operator", "created_at": datetime.utcnow()},
         ]
 
         created_users = 0
