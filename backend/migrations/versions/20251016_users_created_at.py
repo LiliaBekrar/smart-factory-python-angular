@@ -4,7 +4,7 @@ from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
 
-revision: str = "20251016_users_created_at_default"
+revision: str = "20251016_users_created_at"
 down_revision: Union[str, Sequence[str], None] = "20251016_merge_heads" 
 branch_labels = None
 depends_on = None
