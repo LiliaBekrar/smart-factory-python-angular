@@ -68,42 +68,59 @@ app.add_middleware(
 # -------------------------------------------------
 # 🚀 Démarrage : migrations + (optionnel) seeds
 # -------------------------------------------------
-# Sur Render Free, il est pratique d'appliquer les migrations
-# au démarrage si tu ne peux pas utiliser Pre/Post-Deploy hooks.
+# Sur Render Free, on applique les migrations au boot.
 @app.on_event("startup")
 def on_startup():
+    import subprocess
+    from pathlib import Path
     from alembic.config import Config
     from alembic.script import ScriptDirectory
-    from pathlib import Path
-    
-    def print_alembic_heads():
-        # Chemin vers ton alembic.ini dans le dossier backend/
-        cfg_path = Path(__file__).resolve().parents[1] / "alembic.ini"
-        cfg = Config(str(cfg_path))
+
+    # 0) Localise l'alembic.ini (racine = backend/)
+    #    -> main.py est dans backend/app/, on remonte d’un niveau.
+    backend_dir = Path(__file__).resolve().parents[1]
+    alembic_ini = backend_dir / "alembic.ini"
+
+    def log_alembic_heads() -> list[str]:
+        """Retourne et log la liste des heads Alembic trouvés côté code."""
+        cfg = Config(str(alembic_ini))
         script = ScriptDirectory.from_config(cfg)
         heads = list(script.get_heads())
         print(f"🔎 Alembic heads ({len(heads)}): {heads}")
-    
-    # Appelle-la dans on_startup()
-    print_alembic_heads()
+        return heads
+
+    heads = log_alembic_heads()
+
+    # Si plusieurs heads → NE PAS tenter de migrer ni de seeder.
+    if len(heads) > 1:
+        print("❌ Plusieurs heads détectés. Corrige d'abord les migrations (merge).")
+        print("   ➜ Ajoute une migration de merge avec down_revision = (head1, head2, ...)")
+        # On sort proprement du startup sans planter l'app, mais SANS seed.
+        return
 
     migrated_ok = False
-    # 1) Migrations
+
+    # 1) Migrations Alembic (en forçant le bon ini avec -c)
     try:
-        subprocess.run(["alembic", "upgrade", "head"], check=True)
+        # Important: passer explicitement -c <alembic.ini> pour éviter tout cwd foireux.
+        cmd = ["alembic", "-c", str(alembic_ini), "upgrade", "head"]
+        print(f"▶️  Running: {' '.join(cmd)}")
+        subprocess.run(cmd, check=True)
         print("✅ Alembic migrations applied.")
         migrated_ok = True
     except Exception as e:
         print(f"⚠️ Alembic migration failed: {e}")
 
-    # 2) Seed seulement si migrations OK
+    # 2) Seed seulement si migrations OK + flag activé
     if migrated_ok and getattr(settings, "seed_on_start", False):
         try:
             print("🌱 Seeding initial data...")
+            # Lance le module seed avec le PYTHONPATH déjà correct (package app/*)
             subprocess.run(["python", "-m", "app.seed"], check=True)
             print("✅ Seed completed.")
         except Exception as e:
             print(f"⚠️ Seed failed: {e}")
+
 
 
 # -------------------------------------------------
