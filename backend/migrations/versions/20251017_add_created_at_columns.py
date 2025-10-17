@@ -23,17 +23,6 @@ depends_on = None
 
 
 def upgrade():
-    # === USERS ===================================================
-    op.add_column(
-        "users",
-        sa.Column(
-            "created_at",
-            sa.DateTime(),
-            nullable=False,
-            server_default=text("CURRENT_TIMESTAMP"),
-        ),
-    )
-
     # === MACHINES ================================================
     op.add_column(
         "machines",
